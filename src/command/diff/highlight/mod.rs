@@ -252,8 +252,37 @@ mod tests {
         assert!(extensions.contains(&"hpp"), "C++ .hpp config should be loaded");
         assert!(extensions.contains(&"hh"), "C++ .hh config should be loaded");
         assert!(extensions.contains(&"hxx"), "C++ .hxx config should be loaded");
+        assert!(extensions.contains(&"yaml"), "YAML config should be loaded");
+        assert!(extensions.contains(&"yml"), "YAML .yml config should be loaded");
         assert!(extensions.contains(&"sql"), "SQL config should be loaded");
         assert!(extensions.contains(&"astro"), "Astro config should be loaded");
+    }
+
+    #[test]
+    fn test_yaml_highlighting() {
+        use config::HIGHLIGHT_NAMES;
+        let code = r#"# a comment
+name: lumen
+version: 2
+enabled: true
+tags: ["a", "b"]
+"#;
+        let result = highlight_code(code, "test.yaml");
+        assert!(!result.is_empty(), "YAML highlighting should produce output");
+
+        let idx = |n: &str| HIGHLIGHT_NAMES.iter().position(|&x| x == n);
+        let tagged = |text: &str, name: &str| {
+            result
+                .iter()
+                .any(|(t, h)| t.trim() == text && *h == idx(name))
+        };
+
+        assert!(tagged("# a comment", "comment"), "comment should be tagged");
+        assert!(tagged("name", "property"), "mapping key should be a property");
+        assert!(tagged("lumen", "string"), "scalar value should be a string");
+        assert!(tagged("2", "number"), "integer scalar should be a number");
+        // @boolean has no HIGHLIGHT_NAMES entry; the query remaps it.
+        assert!(tagged("true", "constant.builtin"), "boolean should be tagged");
     }
 
     #[test]

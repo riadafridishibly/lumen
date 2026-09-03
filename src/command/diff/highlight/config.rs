@@ -309,6 +309,22 @@ pub static CONFIGS: Lazy<Vec<(&'static str, LanguageConfig)>> = Lazy::new(|| {
     );
 
     load_config(
+        tree_sitter_yaml::LANGUAGE.into(),
+        "yaml",
+        YAML_HIGHLIGHTS,
+        "yaml",
+        &mut configs,
+    );
+
+    load_config(
+        tree_sitter_yaml::LANGUAGE.into(),
+        "yaml",
+        YAML_HIGHLIGHTS,
+        "yml",
+        &mut configs,
+    );
+
+    load_config(
         tree_sitter_sequel::LANGUAGE.into(),
         "sql",
         SQL_HIGHLIGHTS,
