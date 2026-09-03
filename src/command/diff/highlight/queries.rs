@@ -561,6 +561,22 @@ pub const BASH_HIGHLIGHTS: &str = r#"
 (variable_name) @variable
 "#;
 
+// .env files parse as bash: KEY=value is a variable_assignment. Unlike BASH_HIGHLIGHTS
+// this colours the value side, which is the half that actually changes in a diff.
+pub const ENV_HIGHLIGHTS: &str = r#"
+(comment) @comment
+(string) @string
+(raw_string) @string
+(number) @number
+(variable_name) @variable
+(variable_assignment value: (word) @string)
+(variable_assignment value: (concatenation) @string)
+(expansion (variable_name) @variable.builtin)
+(simple_expansion (variable_name) @variable.builtin)
+"export" @keyword
+"=" @operator
+"#;
+
 pub const MD_HIGHLIGHTS: &str = r#"
 (atx_heading) @keyword
 (setext_heading) @keyword

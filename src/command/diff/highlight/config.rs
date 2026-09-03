@@ -181,6 +181,14 @@ pub static CONFIGS: Lazy<Vec<(&'static str, LanguageConfig)>> = Lazy::new(|| {
     );
 
     load_config(
+        tree_sitter_bash::LANGUAGE.into(),
+        "env",
+        ENV_HIGHLIGHTS,
+        "env",
+        &mut configs,
+    );
+
+    load_config(
         tree_sitter_md::LANGUAGE.into(),
         "markdown",
         MD_HIGHLIGHTS,

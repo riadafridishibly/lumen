@@ -35,9 +35,31 @@ pub fn highlight_color(index: usize) -> Color {
     }
 }
 
-fn get_config_for_file(filename: &str) -> Option<&'static LanguageConfig> {
-    let ext = Path::new(filename).extension().and_then(|e| e.to_str())?;
+fn config_for_ext(ext: &str) -> Option<&'static LanguageConfig> {
     CONFIGS.iter().find(|(e, _)| *e == ext).map(|(_, c)| c)
+}
+
+/// Files whose language the extension can't name: `.env` has no extension at all,
+/// and `.env.local` reports "local".
+fn config_key_for_filename(name: &str) -> Option<&'static str> {
+    (name == ".env" || name.starts_with(".env.")).then_some("env")
+}
+
+fn get_config_for_file(filename: &str) -> Option<&'static LanguageConfig> {
+    let path = Path::new(filename);
+
+    if let Some(config) = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .and_then(config_for_ext)
+    {
+        return Some(config);
+    }
+
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .and_then(config_key_for_filename)
+        .and_then(config_for_ext)
 }
 
 fn highlight_code(code: &str, filename: &str) -> Vec<(String, Option<usize>)> {
@@ -256,6 +278,50 @@ mod tests {
         assert!(extensions.contains(&"yml"), "YAML .yml config should be loaded");
         assert!(extensions.contains(&"sql"), "SQL config should be loaded");
         assert!(extensions.contains(&"astro"), "Astro config should be loaded");
+    }
+
+    #[test]
+    fn test_env_highlighting() {
+        use config::HIGHLIGHT_NAMES;
+        let code = r#"# database
+DATABASE_URL=postgres://localhost:5432/db
+API_KEY="secret"
+PORT=8080
+"#;
+        let result = highlight_code(code, "backend.example.env");
+        assert!(!result.is_empty(), "env highlighting should produce output");
+
+        let idx = |n: &str| HIGHLIGHT_NAMES.iter().position(|&x| x == n);
+        let tagged = |text: &str, name: &str| {
+            result
+                .iter()
+                .any(|(t, h)| t.trim() == text && *h == idx(name))
+        };
+
+        assert!(tagged("# database", "comment"), "comment should be tagged");
+        assert!(tagged("DATABASE_URL", "variable"), "key should be a variable");
+        assert!(tagged("=", "operator"), "= should be an operator");
+        // The value side is what changes in a diff, so unquoted values are coloured too.
+        assert!(
+            tagged("postgres://localhost:5432/db", "string"),
+            "unquoted value should be a string"
+        );
+        assert!(tagged("\"secret\"", "string"), "quoted value should be a string");
+        assert!(tagged("8080", "number"), "numeric value should be a number");
+    }
+
+    #[test]
+    fn test_env_filenames_without_a_usable_extension() {
+        for name in [".env", ".env.local", ".env.production", "backend.example.env"] {
+            assert!(
+                get_config_for_file(name).is_some(),
+                "{name} should resolve to a highlight config"
+            );
+        }
+        assert!(
+            get_config_for_file("environment.txt").is_none(),
+            "unrelated files should not match the .env rule"
+        );
     }
 
     #[test]
