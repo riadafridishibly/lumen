@@ -312,7 +312,13 @@ PORT=8080
 
     #[test]
     fn test_env_filenames_without_a_usable_extension() {
-        for name in [".env", ".env.local", ".env.production", "backend.example.env"] {
+        for name in [
+            ".env",
+            ".env.local",
+            ".env.example",
+            ".env.production",
+            "backend.example.env",
+        ] {
             assert!(
                 get_config_for_file(name).is_some(),
                 "{name} should resolve to a highlight config"
