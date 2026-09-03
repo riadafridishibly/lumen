@@ -40,9 +40,14 @@ fn config_for_ext(ext: &str) -> Option<&'static LanguageConfig> {
 }
 
 /// Files whose language the extension can't name: `.env` has no extension at all,
-/// and `.env.local` reports "local".
+/// and `.env.local`, `api.env.example` report "local" and "example". Any
+/// dot-separated `env` segment counts, since the real extension is checked first
+/// (so `env.rs` still resolves as Rust).
 fn config_key_for_filename(name: &str) -> Option<&'static str> {
-    (name == ".env" || name.starts_with(".env.")).then_some("env")
+    name.trim_start_matches('.')
+        .split('.')
+        .any(|segment| segment == "env")
+        .then_some("env")
 }
 
 fn get_config_for_file(filename: &str) -> Option<&'static LanguageConfig> {
@@ -318,6 +323,8 @@ PORT=8080
             ".env.example",
             ".env.production",
             "backend.example.env",
+            "api.env.example",
+            "env.example",
         ] {
             assert!(
                 get_config_for_file(name).is_some(),
@@ -328,6 +335,12 @@ PORT=8080
             get_config_for_file("environment.txt").is_none(),
             "unrelated files should not match the .env rule"
         );
+        // A real extension wins over the filename rule.
+        let rust = get_config_for_file("env.rs").expect("env.rs should resolve");
+        assert!(std::ptr::eq(
+            rust,
+            get_config_for_file("main.rs").expect("main.rs should resolve")
+        ));
     }
 
     #[test]
