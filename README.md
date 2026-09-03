@@ -11,6 +11,16 @@ A fast terminal diff viewer and code review TUI, written in Rust.
 
 Review `git diff`, commits, branches, or GitHub PRs side-by-side without leaving your terminal. Ships as a single static Rust binary and stays snappy on multi-thousand-line diffs.
 
+## Added in this PR
+
+- [x] Astro syntax highlighting
+- [x] SQL syntax highlighting
+- [x] YAML syntax highlighting
+- [x] `.env` file syntax highlighting
+- [x] Wide sidebar mode, toggled with `shift+tab`
+
+## Features
+
 - Side-by-side diff viewer with tree-sitter syntax highlighting
 - Review GitHub Pull Requests with `lumen diff --pr 123`
 - Annotate selections, hunks, or whole files
