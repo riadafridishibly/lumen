@@ -165,6 +165,8 @@ pub struct AppState {
     /// Values are hunk indices within that file's `find_hunk_starts` result.
     pub viewed_hunks: HashMap<String, HashSet<usize>>,
     pub show_sidebar: bool,
+    /// Sidebar widened to fit its longest entry instead of the default quarter-width.
+    pub sidebar_expanded: bool,
     pub settings: DiffViewSettings,
     pub diff_fullscreen: DiffFullscreen,
     pub search_state: SearchState,
@@ -299,6 +301,7 @@ impl AppState {
             viewed_files: HashSet::new(),
             viewed_hunks: HashMap::new(),
             show_sidebar: true,
+            sidebar_expanded: false,
             settings,
             diff_fullscreen: DiffFullscreen::default(),
             search_state: SearchState::default(),
@@ -605,6 +608,35 @@ impl AppState {
     /// Set the VCS backend name
     pub fn set_vcs_name(&mut self, name: &'static str) {
         self.vcs_name = name;
+    }
+
+    /// Widest sidebar label in columns: indent + viewed marker + status symbol + space + name.
+    pub fn max_sidebar_label_width(&self) -> usize {
+        self.sidebar_items
+            .iter()
+            .map(|item| match item {
+                SidebarItem::Directory { name, depth, .. }
+                | SidebarItem::File { name, depth, .. } => depth * 2 + 4 + name.chars().count(),
+            })
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Sidebar width in columns, 0 when hidden. Expanded mode grows to fit the
+    /// longest label (plus the left border), capped at half the terminal.
+    pub fn sidebar_width(&self, term_width: u16) -> u16 {
+        if !self.show_sidebar {
+            return 0;
+        }
+        let normal = (term_width / 4).clamp(20, 35);
+        if !self.sidebar_expanded {
+            return normal;
+        }
+        let wanted = self
+            .max_sidebar_label_width()
+            .saturating_add(1)
+            .min(u16::MAX as usize) as u16;
+        wanted.clamp(normal, (term_width / 2).max(normal))
     }
 
     pub fn sidebar_visible_len(&self) -> usize {
@@ -1017,6 +1049,23 @@ mod tests {
             status: FileStatus::Added,
             is_binary: false,
         }
+    }
+
+    #[test]
+    fn test_sidebar_width_modes() {
+        let name = format!("{}.rs", "a".repeat(60));
+        let mut state = AppState::new(vec![make_file_diff(&name)], None);
+
+        assert_eq!(state.sidebar_width(200), 35);
+
+        state.sidebar_expanded = true;
+        // 4 prefix columns + 63 name columns + 1 border
+        assert_eq!(state.sidebar_width(200), 68);
+        // capped at half the terminal
+        assert_eq!(state.sidebar_width(120), 60);
+
+        state.show_sidebar = false;
+        assert_eq!(state.sidebar_width(200), 0);
     }
 
     #[test]

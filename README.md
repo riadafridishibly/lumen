@@ -174,6 +174,7 @@ Annotated lines display a `▍` gutter indicator. Use `I` to view, edit, delete,
 - `{/}`: Jump between hunks
 - `w`: Toggle watch mode
 - `tab`: Toggle sidebar
+- `shift+tab`: Toggle sidebar width (normal / wide)
 - `space`: Mark file as viewed
 - `e`: Open file in editor
 - `y`: Copy selection (or filename)
