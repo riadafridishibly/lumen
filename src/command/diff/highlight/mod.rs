@@ -8,7 +8,7 @@ use ratatui::prelude::*;
 use tree_sitter_highlight::{HighlightEvent, Highlighter};
 
 use super::theme;
-use config::{LanguageConfig, CONFIGS, HIGHLIGHT_NAMES};
+use config::{config_for_language, LanguageConfig, CONFIGS, HIGHLIGHT_NAMES};
 
 pub fn highlight_color(index: usize) -> Color {
     let t = theme::get();
@@ -46,7 +46,9 @@ fn highlight_code(code: &str, filename: &str) -> Vec<(String, Option<usize>)> {
     };
 
     let mut highlighter = Highlighter::new();
-    let highlights = highlighter.highlight(&lang_config.config, code.as_bytes(), None, |_| None);
+    let highlights = highlighter.highlight(&lang_config.config, code.as_bytes(), None, |name| {
+        config_for_language(name)
+    });
 
     let Ok(highlights) = highlights else {
         return code.lines().map(|l| (l.to_string(), None)).collect();
@@ -90,7 +92,9 @@ impl FileHighlighter {
 
         let mut highlighter = Highlighter::new();
         let highlights =
-            highlighter.highlight(&lang_config.config, content.as_bytes(), None, |_| None);
+            highlighter.highlight(&lang_config.config, content.as_bytes(), None, |name| {
+                config_for_language(name)
+            });
 
         let Ok(highlights) = highlights else {
             return Self::default();
@@ -248,6 +252,93 @@ mod tests {
         assert!(extensions.contains(&"hpp"), "C++ .hpp config should be loaded");
         assert!(extensions.contains(&"hh"), "C++ .hh config should be loaded");
         assert!(extensions.contains(&"hxx"), "C++ .hxx config should be loaded");
+        assert!(extensions.contains(&"sql"), "SQL config should be loaded");
+        assert!(extensions.contains(&"astro"), "Astro config should be loaded");
+    }
+
+    #[test]
+    fn test_sql_highlighting() {
+        use config::HIGHLIGHT_NAMES;
+        let code = r#"-- a comment
+SELECT t.id, count(*) AS n
+FROM public.users AS t
+WHERE t.name = 'bob' AND t.age > 42
+GROUP BY t.id;
+"#;
+        let result = highlight_code(code, "test.sql");
+        assert!(!result.is_empty(), "SQL highlighting should produce output");
+
+        let idx = |n: &str| HIGHLIGHT_NAMES.iter().position(|&x| x == n);
+        let tagged = |text: &str, name: &str| {
+            result
+                .iter()
+                .any(|(t, h)| t.trim() == text && *h == idx(name))
+        };
+
+        assert!(tagged("-- a comment", "comment"), "comment should be tagged");
+        assert!(tagged("SELECT", "keyword"), "SELECT should be a keyword");
+        assert!(tagged("'bob'", "string"), "quoted literal should be a string");
+        // The grammar lumps every scalar into (literal); the #match? refinement
+        // splits numbers back out.
+        assert!(tagged("42", "number"), "numeric literal should be a number");
+        assert!(tagged("public", "module"), "schema should be a module");
+        assert!(tagged("users", "type"), "table should be a type");
+        assert!(tagged("id", "variable.member"), "column should be a member");
+    }
+
+    #[test]
+    fn test_astro_highlighting() {
+        use config::HIGHLIGHT_NAMES;
+        let code = r#"---
+const title: string = "hi";
+---
+<h1 class="a">{title}</h1>
+<style>
+.a { color: red; }
+</style>
+<script>let msg = "hey";</script>
+"#;
+        let result = highlight_code(code, "test.astro");
+        assert!(!result.is_empty(), "Astro highlighting should produce output");
+
+        let idx = |n: &str| HIGHLIGHT_NAMES.iter().position(|&x| x == n);
+        let tagged = |text: &str, name: &str| {
+            result
+                .iter()
+                .any(|(t, h)| t.trim() == text && *h == idx(name))
+        };
+
+        assert!(tagged("h1", "tag"), "tag name should be tagged");
+        assert!(tagged("class", "attribute"), "attribute should be tagged");
+        // Everything below this line comes from an injected grammar.
+        assert!(tagged("const", "keyword"), "frontmatter TS should be injected");
+        assert!(tagged("color", "property"), "<style> CSS should be injected");
+        assert!(tagged("\"hey\"", "string"), "<script> TS should be injected");
+    }
+
+    #[test]
+    fn test_astro_file_highlighter_frontmatter_line() {
+        use config::HIGHLIGHT_NAMES;
+        let code = r#"---
+const title: string = "hi";
+---
+<h1>{title}</h1>
+"#;
+        let highlighter = FileHighlighter::new(code, "test.astro");
+        assert!(!highlighter.is_empty(), "Highlighter should have content");
+
+        let keyword_idx = HIGHLIGHT_NAMES
+            .iter()
+            .position(|&n| n == "keyword")
+            .expect("keyword highlight should exist");
+
+        // Line 2 is inside the injected TypeScript layer.
+        let spans = highlighter.get_line_spans(2, None);
+        let const_span = spans
+            .iter()
+            .find(|s| s.content == "const")
+            .expect("frontmatter should be split onto line 2");
+        assert_eq!(const_span.style.fg, Some(highlight_color(keyword_idx)));
     }
 
     #[test]

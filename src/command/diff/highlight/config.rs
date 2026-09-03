@@ -50,7 +50,18 @@ fn load_config(
     ext: &'static str,
     configs: &mut Vec<(&'static str, LanguageConfig)>,
 ) {
-    match HighlightConfiguration::new(language, name, highlights, "", "") {
+    load_config_with_injections(language, name, highlights, "", ext, configs);
+}
+
+fn load_config_with_injections(
+    language: tree_sitter::Language,
+    name: &str,
+    highlights: &str,
+    injections: &str,
+    ext: &'static str,
+    configs: &mut Vec<(&'static str, LanguageConfig)>,
+) {
+    match HighlightConfiguration::new(language, name, highlights, injections, "") {
         Ok(mut config) => {
             config.configure(HIGHLIGHT_NAMES);
             configs.push((ext, LanguageConfig { config }));
@@ -297,5 +308,30 @@ pub static CONFIGS: Lazy<Vec<(&'static str, LanguageConfig)>> = Lazy::new(|| {
         &mut configs,
     );
 
+    load_config(
+        tree_sitter_sequel::LANGUAGE.into(),
+        "sql",
+        SQL_HIGHLIGHTS,
+        "sql",
+        &mut configs,
+    );
+
+    load_config_with_injections(
+        tree_sitter_astro_next::LANGUAGE.into(),
+        "astro",
+        ASTRO_HIGHLIGHTS,
+        ASTRO_INJECTIONS,
+        "astro",
+        &mut configs,
+    );
+
     configs
 });
+
+/// Look up a config by grammar name, for resolving injected languages.
+pub fn config_for_language(name: &str) -> Option<&'static HighlightConfiguration> {
+    CONFIGS
+        .iter()
+        .map(|(_, c)| &c.config)
+        .find(|c| c.language_name == name)
+}
