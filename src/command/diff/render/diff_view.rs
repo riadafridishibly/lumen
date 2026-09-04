@@ -1257,7 +1257,7 @@ pub fn render_diff(
     scroll: u16,
     h_scroll: u16,
     watching: bool,
-    show_sidebar: bool,
+    sidebar_width: u16,
     focused_panel: FocusedPanel,
     sidebar_selected: usize,
     sidebar_scroll: usize,
@@ -1290,6 +1290,7 @@ pub fn render_diff(
     let t = theme::get();
     let bg = t.ui.bg;
     let h_scroll = if settings.wrap { 0 } else { h_scroll };
+    let show_sidebar = sidebar_width > 0;
 
     // Layout: header (if stacked) + main content + footer
     let (content_area, footer_area) = if stacked_mode {
@@ -1322,7 +1323,6 @@ pub fn render_diff(
     };
 
     let main_area = if show_sidebar {
-        let sidebar_width = (area.width / 4).clamp(20, 35);
         let main_chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Length(sidebar_width), Constraint::Min(0)])
