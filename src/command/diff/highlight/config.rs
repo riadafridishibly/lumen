@@ -53,6 +53,19 @@ fn load_config(
     load_config_with_injections(language, name, highlights, "", ext, configs);
 }
 
+/// Register one grammar under several extensions that all name the same language.
+fn load_config_exts(
+    language: tree_sitter::Language,
+    name: &str,
+    highlights: &str,
+    exts: &[&'static str],
+    configs: &mut Vec<(&'static str, LanguageConfig)>,
+) {
+    for ext in exts {
+        load_config(language.clone(), name, highlights, ext, configs);
+    }
+}
+
 fn load_config_with_injections(
     language: tree_sitter::Language,
     name: &str,
@@ -76,11 +89,11 @@ fn load_config_with_injections(
 pub static CONFIGS: Lazy<Vec<(&'static str, LanguageConfig)>> = Lazy::new(|| {
     let mut configs = Vec::new();
 
-    load_config(
+    load_config_exts(
         tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
         "typescript",
         TS_HIGHLIGHTS,
-        "ts",
+        &["ts", "mts", "cts"],
         &mut configs,
     );
 
@@ -92,19 +105,11 @@ pub static CONFIGS: Lazy<Vec<(&'static str, LanguageConfig)>> = Lazy::new(|| {
         &mut configs,
     );
 
-    load_config(
+    load_config_exts(
         tree_sitter_javascript::LANGUAGE.into(),
         "javascript",
         JS_HIGHLIGHTS,
-        "js",
-        &mut configs,
-    );
-
-    load_config(
-        tree_sitter_javascript::LANGUAGE.into(),
-        "javascript",
-        JS_HIGHLIGHTS,
-        "jsx",
+        &["js", "jsx", "mjs", "cjs"],
         &mut configs,
     );
 
@@ -116,19 +121,19 @@ pub static CONFIGS: Lazy<Vec<(&'static str, LanguageConfig)>> = Lazy::new(|| {
         &mut configs,
     );
 
-    load_config(
+    load_config_exts(
         tree_sitter_json::LANGUAGE.into(),
         "json",
         JSON_HIGHLIGHTS,
-        "json",
+        &["json", "jsonc"],
         &mut configs,
     );
 
-    load_config(
+    load_config_exts(
         tree_sitter_python::LANGUAGE.into(),
         "python",
         PYTHON_HIGHLIGHTS,
-        "py",
+        &["py", "pyi", "pyw"],
         &mut configs,
     );
 
@@ -148,11 +153,11 @@ pub static CONFIGS: Lazy<Vec<(&'static str, LanguageConfig)>> = Lazy::new(|| {
         &mut configs,
     );
 
-    load_config(
+    load_config_exts(
         tree_sitter_html::LANGUAGE.into(),
         "html",
         HTML_HIGHLIGHTS,
-        "html",
+        &["html", "htm", "xhtml"],
         &mut configs,
     );
 
@@ -164,19 +169,11 @@ pub static CONFIGS: Lazy<Vec<(&'static str, LanguageConfig)>> = Lazy::new(|| {
         &mut configs,
     );
 
-    load_config(
+    load_config_exts(
         tree_sitter_bash::LANGUAGE.into(),
         "bash",
         BASH_HIGHLIGHTS,
-        "sh",
-        &mut configs,
-    );
-
-    load_config(
-        tree_sitter_bash::LANGUAGE.into(),
-        "bash",
-        BASH_HIGHLIGHTS,
-        "bash",
+        &["sh", "bash", "zsh", "ksh"],
         &mut configs,
     );
 
@@ -188,35 +185,27 @@ pub static CONFIGS: Lazy<Vec<(&'static str, LanguageConfig)>> = Lazy::new(|| {
         &mut configs,
     );
 
-    load_config(
+    load_config_exts(
         tree_sitter_md::LANGUAGE.into(),
         "markdown",
         MD_HIGHLIGHTS,
-        "md",
+        &["md", "mdx", "markdown"],
         &mut configs,
     );
 
-    load_config(
-        tree_sitter_md::LANGUAGE.into(),
-        "markdown",
-        MD_HIGHLIGHTS,
-        "mdx",
-        &mut configs,
-    );
-
-    load_config(
+    load_config_exts(
         tree_sitter_c_sharp::LANGUAGE.into(),
         "c_sharp",
         CSHARP_HIGHLIGHTS,
-        "cs",
+        &["cs", "csx"],
         &mut configs,
     );
 
-    load_config(
+    load_config_exts(
         tree_sitter_ruby::LANGUAGE.into(),
         "ruby",
         RUBY_HIGHLIGHTS,
-        "rb",
+        &["rb", "gemspec", "rake"],
         &mut configs,
     );
 
@@ -268,51 +257,11 @@ pub static CONFIGS: Lazy<Vec<(&'static str, LanguageConfig)>> = Lazy::new(|| {
         &mut configs,
     );
 
-    load_config(
+    load_config_exts(
         tree_sitter_cpp::LANGUAGE.into(),
         "cpp",
         CPP_HIGHLIGHTS,
-        "cpp",
-        &mut configs,
-    );
-
-    load_config(
-        tree_sitter_cpp::LANGUAGE.into(),
-        "cpp",
-        CPP_HIGHLIGHTS,
-        "cc",
-        &mut configs,
-    );
-
-    load_config(
-        tree_sitter_cpp::LANGUAGE.into(),
-        "cpp",
-        CPP_HIGHLIGHTS,
-        "cxx",
-        &mut configs,
-    );
-
-    load_config(
-        tree_sitter_cpp::LANGUAGE.into(),
-        "cpp",
-        CPP_HIGHLIGHTS,
-        "hpp",
-        &mut configs,
-    );
-
-    load_config(
-        tree_sitter_cpp::LANGUAGE.into(),
-        "cpp",
-        CPP_HIGHLIGHTS,
-        "hh",
-        &mut configs,
-    );
-
-    load_config(
-        tree_sitter_cpp::LANGUAGE.into(),
-        "cpp",
-        CPP_HIGHLIGHTS,
-        "hxx",
+        &["cpp", "cc", "cxx", "hpp", "hh", "hxx", "ipp", "inl", "tpp"],
         &mut configs,
     );
 

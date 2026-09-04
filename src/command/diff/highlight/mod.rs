@@ -39,15 +39,47 @@ fn config_for_ext(ext: &str) -> Option<&'static LanguageConfig> {
     CONFIGS.iter().find(|(e, _)| *e == ext).map(|(_, c)| c)
 }
 
+/// Whole filenames that name their language on their own, either because they have
+/// no extension (`Gemfile`, `.bashrc`) or because the one they have doesn't name a
+/// language (`Cargo.lock`). Checked after the real extension, so `lock.rs` and
+/// friends still resolve normally.
+const FILENAME_CONFIG_KEYS: &[(&str, &str)] = &[
+    (".bashrc", "bash"),
+    (".zshrc", "bash"),
+    (".bash_profile", "bash"),
+    (".zshenv", "bash"),
+    (".profile", "bash"),
+    ("Gemfile", "rb"),
+    ("Rakefile", "rb"),
+    ("Vagrantfile", "rb"),
+    ("Podfile", "rb"),
+    ("Brewfile", "rb"),
+    ("Cargo.lock", "toml"),
+    ("uv.lock", "toml"),
+    ("poetry.lock", "toml"),
+    ("Pipfile", "toml"),
+    (".babelrc", "json"),
+    (".eslintrc", "json"),
+    (".clang-format", "yaml"),
+];
+
 /// Files whose language the extension can't name: `.env` has no extension at all,
 /// and `.env.local`, `api.env.example` report "local" and "example". Any
 /// dot-separated `env` segment counts, since the real extension is checked first
 /// (so `env.rs` still resolves as Rust).
 fn config_key_for_filename(name: &str) -> Option<&'static str> {
-    name.trim_start_matches('.')
+    if name
+        .trim_start_matches('.')
         .split('.')
         .any(|segment| segment == "env")
-        .then_some("env")
+    {
+        return Some("env");
+    }
+
+    FILENAME_CONFIG_KEYS
+        .iter()
+        .find(|(known, _)| *known == name)
+        .map(|(_, key)| *key)
 }
 
 fn get_config_for_file(filename: &str) -> Option<&'static LanguageConfig> {
@@ -259,11 +291,21 @@ mod tests {
             extensions.contains(&"ts"),
             "TypeScript config should be loaded"
         );
+        assert!(
+            extensions.contains(&"mts"),
+            "ESM .mts config should be loaded"
+        );
+        assert!(
+            extensions.contains(&"cts"),
+            "CommonJS .cts config should be loaded"
+        );
         assert!(extensions.contains(&"tsx"), "TSX config should be loaded");
         assert!(
             extensions.contains(&"js"),
             "JavaScript config should be loaded"
         );
+        assert!(extensions.contains(&"mjs"), "ESM .mjs config should be loaded");
+        assert!(extensions.contains(&"cjs"), "CommonJS .cjs config should be loaded");
         assert!(extensions.contains(&"py"), "Python config should be loaded");
         assert!(extensions.contains(&"go"), "Go config should be loaded");
         assert!(extensions.contains(&"json"), "JSON config should be loaded");
@@ -283,6 +325,86 @@ mod tests {
         assert!(extensions.contains(&"yml"), "YAML .yml config should be loaded");
         assert!(extensions.contains(&"sql"), "SQL config should be loaded");
         assert!(extensions.contains(&"astro"), "Astro config should be loaded");
+    }
+
+    #[test]
+    fn test_extension_aliases_resolve() {
+        for name in [
+            "types.pyi",
+            "app.pyw",
+            "install.zsh",
+            "run.ksh",
+            "app.gemspec",
+            "tasks.rake",
+            "settings.jsonc",
+            "index.htm",
+            "page.xhtml",
+            "vec.ipp",
+            "util.inl",
+            "span.tpp",
+            "notes.markdown",
+            "build.csx",
+        ] {
+            assert!(
+                get_config_for_file(name).is_some(),
+                "{name} should resolve to a config"
+            );
+        }
+    }
+
+    #[test]
+    fn test_whole_filenames_resolve() {
+        for name in [
+            ".bashrc",
+            ".zshrc",
+            ".bash_profile",
+            ".zshenv",
+            ".profile",
+            "Gemfile",
+            "Rakefile",
+            "Vagrantfile",
+            "Podfile",
+            "Brewfile",
+            "Cargo.lock",
+            "uv.lock",
+            "poetry.lock",
+            "Pipfile",
+            ".babelrc",
+            ".eslintrc",
+            ".clang-format",
+        ] {
+            assert!(
+                get_config_for_file(name).is_some(),
+                "{name} should resolve to a config"
+            );
+        }
+    }
+
+    /// The whole-filename table must not shadow a real extension.
+    #[test]
+    fn test_real_extension_wins_over_filename_table() {
+        for name in ["lock.rs", "Gemfile.rs", "profile.py", "env.rs"] {
+            let ext = name.rsplit('.').next().unwrap();
+            assert!(
+                std::ptr::eq(
+                    get_config_for_file(name).unwrap(),
+                    config_for_ext(ext).unwrap()
+                ),
+                "{name} should resolve by its .{ext} extension"
+            );
+        }
+    }
+
+    #[test]
+    fn test_esm_and_cjs_highlighting() {
+        let code = "import fs from \"node:fs\";\nconst x = 42;\n";
+        for name in ["test.mjs", "test.cjs", "test.mts", "test.cts"] {
+            let result = highlight_code(code, name);
+            assert!(
+                result.iter().any(|(_, h)| h.is_some()),
+                "{name} should have syntax highlights"
+            );
+        }
     }
 
     #[test]
