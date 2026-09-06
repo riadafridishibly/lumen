@@ -50,7 +50,31 @@ fn load_config(
     ext: &'static str,
     configs: &mut Vec<(&'static str, LanguageConfig)>,
 ) {
-    match HighlightConfiguration::new(language, name, highlights, "", "") {
+    load_config_with_injections(language, name, highlights, "", ext, configs);
+}
+
+/// Register one grammar under several extensions that all name the same language.
+fn load_config_exts(
+    language: tree_sitter::Language,
+    name: &str,
+    highlights: &str,
+    exts: &[&'static str],
+    configs: &mut Vec<(&'static str, LanguageConfig)>,
+) {
+    for ext in exts {
+        load_config(language.clone(), name, highlights, ext, configs);
+    }
+}
+
+fn load_config_with_injections(
+    language: tree_sitter::Language,
+    name: &str,
+    highlights: &str,
+    injections: &str,
+    ext: &'static str,
+    configs: &mut Vec<(&'static str, LanguageConfig)>,
+) {
+    match HighlightConfiguration::new(language, name, highlights, injections, "") {
         Ok(mut config) => {
             config.configure(HIGHLIGHT_NAMES);
             configs.push((ext, LanguageConfig { config }));
@@ -65,11 +89,11 @@ fn load_config(
 pub static CONFIGS: Lazy<Vec<(&'static str, LanguageConfig)>> = Lazy::new(|| {
     let mut configs = Vec::new();
 
-    load_config(
+    load_config_exts(
         tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
         "typescript",
         TS_HIGHLIGHTS,
-        "ts",
+        &["ts", "mts", "cts"],
         &mut configs,
     );
 
@@ -81,19 +105,11 @@ pub static CONFIGS: Lazy<Vec<(&'static str, LanguageConfig)>> = Lazy::new(|| {
         &mut configs,
     );
 
-    load_config(
+    load_config_exts(
         tree_sitter_javascript::LANGUAGE.into(),
         "javascript",
         JS_HIGHLIGHTS,
-        "js",
-        &mut configs,
-    );
-
-    load_config(
-        tree_sitter_javascript::LANGUAGE.into(),
-        "javascript",
-        JS_HIGHLIGHTS,
-        "jsx",
+        &["js", "jsx", "mjs", "cjs"],
         &mut configs,
     );
 
@@ -105,19 +121,19 @@ pub static CONFIGS: Lazy<Vec<(&'static str, LanguageConfig)>> = Lazy::new(|| {
         &mut configs,
     );
 
-    load_config(
+    load_config_exts(
         tree_sitter_json::LANGUAGE.into(),
         "json",
         JSON_HIGHLIGHTS,
-        "json",
+        &["json", "jsonc"],
         &mut configs,
     );
 
-    load_config(
+    load_config_exts(
         tree_sitter_python::LANGUAGE.into(),
         "python",
         PYTHON_HIGHLIGHTS,
-        "py",
+        &["py", "pyi", "pyw"],
         &mut configs,
     );
 
@@ -137,11 +153,11 @@ pub static CONFIGS: Lazy<Vec<(&'static str, LanguageConfig)>> = Lazy::new(|| {
         &mut configs,
     );
 
-    load_config(
+    load_config_exts(
         tree_sitter_html::LANGUAGE.into(),
         "html",
         HTML_HIGHLIGHTS,
-        "html",
+        &["html", "htm", "xhtml"],
         &mut configs,
     );
 
@@ -153,51 +169,43 @@ pub static CONFIGS: Lazy<Vec<(&'static str, LanguageConfig)>> = Lazy::new(|| {
         &mut configs,
     );
 
-    load_config(
+    load_config_exts(
         tree_sitter_bash::LANGUAGE.into(),
         "bash",
         BASH_HIGHLIGHTS,
-        "sh",
+        &["sh", "bash", "zsh", "ksh"],
         &mut configs,
     );
 
     load_config(
         tree_sitter_bash::LANGUAGE.into(),
-        "bash",
-        BASH_HIGHLIGHTS,
-        "bash",
+        "env",
+        ENV_HIGHLIGHTS,
+        "env",
         &mut configs,
     );
 
-    load_config(
+    load_config_exts(
         tree_sitter_md::LANGUAGE.into(),
         "markdown",
         MD_HIGHLIGHTS,
-        "md",
+        &["md", "mdx", "markdown"],
         &mut configs,
     );
 
-    load_config(
-        tree_sitter_md::LANGUAGE.into(),
-        "markdown",
-        MD_HIGHLIGHTS,
-        "mdx",
-        &mut configs,
-    );
-
-    load_config(
+    load_config_exts(
         tree_sitter_c_sharp::LANGUAGE.into(),
         "c_sharp",
         CSHARP_HIGHLIGHTS,
-        "cs",
+        &["cs", "csx"],
         &mut configs,
     );
 
-    load_config(
+    load_config_exts(
         tree_sitter_ruby::LANGUAGE.into(),
         "ruby",
         RUBY_HIGHLIGHTS,
-        "rb",
+        &["rb", "gemspec", "rake"],
         &mut configs,
     );
 
@@ -249,53 +257,54 @@ pub static CONFIGS: Lazy<Vec<(&'static str, LanguageConfig)>> = Lazy::new(|| {
         &mut configs,
     );
 
-    load_config(
+    load_config_exts(
         tree_sitter_cpp::LANGUAGE.into(),
         "cpp",
         CPP_HIGHLIGHTS,
-        "cpp",
+        &["cpp", "cc", "cxx", "hpp", "hh", "hxx", "ipp", "inl", "tpp"],
         &mut configs,
     );
 
     load_config(
-        tree_sitter_cpp::LANGUAGE.into(),
-        "cpp",
-        CPP_HIGHLIGHTS,
-        "cc",
+        tree_sitter_yaml::LANGUAGE.into(),
+        "yaml",
+        YAML_HIGHLIGHTS,
+        "yaml",
         &mut configs,
     );
 
     load_config(
-        tree_sitter_cpp::LANGUAGE.into(),
-        "cpp",
-        CPP_HIGHLIGHTS,
-        "cxx",
+        tree_sitter_yaml::LANGUAGE.into(),
+        "yaml",
+        YAML_HIGHLIGHTS,
+        "yml",
         &mut configs,
     );
 
     load_config(
-        tree_sitter_cpp::LANGUAGE.into(),
-        "cpp",
-        CPP_HIGHLIGHTS,
-        "hpp",
+        tree_sitter_sequel::LANGUAGE.into(),
+        "sql",
+        SQL_HIGHLIGHTS,
+        "sql",
         &mut configs,
     );
 
-    load_config(
-        tree_sitter_cpp::LANGUAGE.into(),
-        "cpp",
-        CPP_HIGHLIGHTS,
-        "hh",
-        &mut configs,
-    );
-
-    load_config(
-        tree_sitter_cpp::LANGUAGE.into(),
-        "cpp",
-        CPP_HIGHLIGHTS,
-        "hxx",
+    load_config_with_injections(
+        tree_sitter_astro_next::LANGUAGE.into(),
+        "astro",
+        ASTRO_HIGHLIGHTS,
+        ASTRO_INJECTIONS,
+        "astro",
         &mut configs,
     );
 
     configs
 });
+
+/// Look up a config by grammar name, for resolving injected languages.
+pub fn config_for_language(name: &str) -> Option<&'static HighlightConfiguration> {
+    CONFIGS
+        .iter()
+        .map(|(_, c)| &c.config)
+        .find(|c| c.language_name == name)
+}

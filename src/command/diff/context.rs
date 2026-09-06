@@ -138,16 +138,18 @@ static LANGUAGE_CONTEXTS: Lazy<Vec<(&'static str, LanguageContext)>> = Lazy::new
         ));
     }
 
-    // TypeScript
+    // TypeScript, including the ESM/CJS extensions
     let ts_lang: Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
-    if let Ok(query) = Query::new(&ts_lang, TYPESCRIPT_CONTEXT_QUERY) {
-        contexts.push((
-            "ts",
-            LanguageContext {
-                language: ts_lang,
-                query,
-            },
-        ));
+    for ext in ["ts", "mts", "cts"] {
+        if let Ok(query) = Query::new(&ts_lang, TYPESCRIPT_CONTEXT_QUERY) {
+            contexts.push((
+                ext,
+                LanguageContext {
+                    language: ts_lang.clone(),
+                    query,
+                },
+            ));
+        }
     }
 
     // TSX
@@ -174,15 +176,17 @@ static LANGUAGE_CONTEXTS: Lazy<Vec<(&'static str, LanguageContext)>> = Lazy::new
         ));
     }
 
-    // JSX (same as JS)
-    if let Ok(query) = Query::new(&js_lang, JAVASCRIPT_CONTEXT_QUERY) {
-        contexts.push((
-            "jsx",
-            LanguageContext {
-                language: js_lang,
-                query,
-            },
-        ));
+    // JSX and the ESM/CJS extensions (same as JS)
+    for ext in ["jsx", "mjs", "cjs"] {
+        if let Ok(query) = Query::new(&js_lang, JAVASCRIPT_CONTEXT_QUERY) {
+            contexts.push((
+                ext,
+                LanguageContext {
+                    language: js_lang.clone(),
+                    query,
+                },
+            ));
+        }
     }
 
     // Python

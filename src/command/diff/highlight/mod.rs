@@ -8,7 +8,7 @@ use ratatui::prelude::*;
 use tree_sitter_highlight::{HighlightEvent, Highlighter};
 
 use super::theme;
-use config::{LanguageConfig, CONFIGS, HIGHLIGHT_NAMES};
+use config::{config_for_language, LanguageConfig, CONFIGS, HIGHLIGHT_NAMES};
 
 pub fn highlight_color(index: usize) -> Color {
     let t = theme::get();
@@ -35,9 +35,68 @@ pub fn highlight_color(index: usize) -> Color {
     }
 }
 
-fn get_config_for_file(filename: &str) -> Option<&'static LanguageConfig> {
-    let ext = Path::new(filename).extension().and_then(|e| e.to_str())?;
+fn config_for_ext(ext: &str) -> Option<&'static LanguageConfig> {
     CONFIGS.iter().find(|(e, _)| *e == ext).map(|(_, c)| c)
+}
+
+/// Whole filenames that name their language on their own, either because they have
+/// no extension (`Gemfile`, `.bashrc`) or because the one they have doesn't name a
+/// language (`Cargo.lock`). Checked after the real extension, so `lock.rs` and
+/// friends still resolve normally.
+const FILENAME_CONFIG_KEYS: &[(&str, &str)] = &[
+    (".bashrc", "bash"),
+    (".zshrc", "bash"),
+    (".bash_profile", "bash"),
+    (".zshenv", "bash"),
+    (".profile", "bash"),
+    ("Gemfile", "rb"),
+    ("Rakefile", "rb"),
+    ("Vagrantfile", "rb"),
+    ("Podfile", "rb"),
+    ("Brewfile", "rb"),
+    ("Cargo.lock", "toml"),
+    ("uv.lock", "toml"),
+    ("poetry.lock", "toml"),
+    ("Pipfile", "toml"),
+    (".babelrc", "json"),
+    (".eslintrc", "json"),
+    (".clang-format", "yaml"),
+];
+
+/// Files whose language the extension can't name: `.env` has no extension at all,
+/// and `.env.local`, `api.env.example` report "local" and "example". Any
+/// dot-separated `env` segment counts, since the real extension is checked first
+/// (so `env.rs` still resolves as Rust).
+fn config_key_for_filename(name: &str) -> Option<&'static str> {
+    if name
+        .trim_start_matches('.')
+        .split('.')
+        .any(|segment| segment == "env")
+    {
+        return Some("env");
+    }
+
+    FILENAME_CONFIG_KEYS
+        .iter()
+        .find(|(known, _)| *known == name)
+        .map(|(_, key)| *key)
+}
+
+fn get_config_for_file(filename: &str) -> Option<&'static LanguageConfig> {
+    let path = Path::new(filename);
+
+    if let Some(config) = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .and_then(config_for_ext)
+    {
+        return Some(config);
+    }
+
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .and_then(config_key_for_filename)
+        .and_then(config_for_ext)
 }
 
 fn highlight_code(code: &str, filename: &str) -> Vec<(String, Option<usize>)> {
@@ -46,7 +105,9 @@ fn highlight_code(code: &str, filename: &str) -> Vec<(String, Option<usize>)> {
     };
 
     let mut highlighter = Highlighter::new();
-    let highlights = highlighter.highlight(&lang_config.config, code.as_bytes(), None, |_| None);
+    let highlights = highlighter.highlight(&lang_config.config, code.as_bytes(), None, |name| {
+        config_for_language(name)
+    });
 
     let Ok(highlights) = highlights else {
         return code.lines().map(|l| (l.to_string(), None)).collect();
@@ -90,7 +151,9 @@ impl FileHighlighter {
 
         let mut highlighter = Highlighter::new();
         let highlights =
-            highlighter.highlight(&lang_config.config, content.as_bytes(), None, |_| None);
+            highlighter.highlight(&lang_config.config, content.as_bytes(), None, |name| {
+                config_for_language(name)
+            });
 
         let Ok(highlights) = highlights else {
             return Self::default();
@@ -228,11 +291,21 @@ mod tests {
             extensions.contains(&"ts"),
             "TypeScript config should be loaded"
         );
+        assert!(
+            extensions.contains(&"mts"),
+            "ESM .mts config should be loaded"
+        );
+        assert!(
+            extensions.contains(&"cts"),
+            "CommonJS .cts config should be loaded"
+        );
         assert!(extensions.contains(&"tsx"), "TSX config should be loaded");
         assert!(
             extensions.contains(&"js"),
             "JavaScript config should be loaded"
         );
+        assert!(extensions.contains(&"mjs"), "ESM .mjs config should be loaded");
+        assert!(extensions.contains(&"cjs"), "CommonJS .cjs config should be loaded");
         assert!(extensions.contains(&"py"), "Python config should be loaded");
         assert!(extensions.contains(&"go"), "Go config should be loaded");
         assert!(extensions.contains(&"json"), "JSON config should be loaded");
@@ -248,6 +321,260 @@ mod tests {
         assert!(extensions.contains(&"hpp"), "C++ .hpp config should be loaded");
         assert!(extensions.contains(&"hh"), "C++ .hh config should be loaded");
         assert!(extensions.contains(&"hxx"), "C++ .hxx config should be loaded");
+        assert!(extensions.contains(&"yaml"), "YAML config should be loaded");
+        assert!(extensions.contains(&"yml"), "YAML .yml config should be loaded");
+        assert!(extensions.contains(&"sql"), "SQL config should be loaded");
+        assert!(extensions.contains(&"astro"), "Astro config should be loaded");
+    }
+
+    #[test]
+    fn test_extension_aliases_resolve() {
+        for name in [
+            "types.pyi",
+            "app.pyw",
+            "install.zsh",
+            "run.ksh",
+            "app.gemspec",
+            "tasks.rake",
+            "settings.jsonc",
+            "index.htm",
+            "page.xhtml",
+            "vec.ipp",
+            "util.inl",
+            "span.tpp",
+            "notes.markdown",
+            "build.csx",
+        ] {
+            assert!(
+                get_config_for_file(name).is_some(),
+                "{name} should resolve to a config"
+            );
+        }
+    }
+
+    #[test]
+    fn test_whole_filenames_resolve() {
+        for name in [
+            ".bashrc",
+            ".zshrc",
+            ".bash_profile",
+            ".zshenv",
+            ".profile",
+            "Gemfile",
+            "Rakefile",
+            "Vagrantfile",
+            "Podfile",
+            "Brewfile",
+            "Cargo.lock",
+            "uv.lock",
+            "poetry.lock",
+            "Pipfile",
+            ".babelrc",
+            ".eslintrc",
+            ".clang-format",
+        ] {
+            assert!(
+                get_config_for_file(name).is_some(),
+                "{name} should resolve to a config"
+            );
+        }
+    }
+
+    /// The whole-filename table must not shadow a real extension.
+    #[test]
+    fn test_real_extension_wins_over_filename_table() {
+        for name in ["lock.rs", "Gemfile.rs", "profile.py", "env.rs"] {
+            let ext = name.rsplit('.').next().unwrap();
+            assert!(
+                std::ptr::eq(
+                    get_config_for_file(name).unwrap(),
+                    config_for_ext(ext).unwrap()
+                ),
+                "{name} should resolve by its .{ext} extension"
+            );
+        }
+    }
+
+    #[test]
+    fn test_esm_and_cjs_highlighting() {
+        let code = "import fs from \"node:fs\";\nconst x = 42;\n";
+        for name in ["test.mjs", "test.cjs", "test.mts", "test.cts"] {
+            let result = highlight_code(code, name);
+            assert!(
+                result.iter().any(|(_, h)| h.is_some()),
+                "{name} should have syntax highlights"
+            );
+        }
+    }
+
+    #[test]
+    fn test_env_highlighting() {
+        use config::HIGHLIGHT_NAMES;
+        let code = r#"# database
+DATABASE_URL=postgres://localhost:5432/db
+API_KEY="secret"
+PORT=8080
+"#;
+        let result = highlight_code(code, "backend.example.env");
+        assert!(!result.is_empty(), "env highlighting should produce output");
+
+        let idx = |n: &str| HIGHLIGHT_NAMES.iter().position(|&x| x == n);
+        let tagged = |text: &str, name: &str| {
+            result
+                .iter()
+                .any(|(t, h)| t.trim() == text && *h == idx(name))
+        };
+
+        assert!(tagged("# database", "comment"), "comment should be tagged");
+        assert!(tagged("DATABASE_URL", "variable"), "key should be a variable");
+        assert!(tagged("=", "operator"), "= should be an operator");
+        // The value side is what changes in a diff, so unquoted values are coloured too.
+        assert!(
+            tagged("postgres://localhost:5432/db", "string"),
+            "unquoted value should be a string"
+        );
+        assert!(tagged("\"secret\"", "string"), "quoted value should be a string");
+        assert!(tagged("8080", "number"), "numeric value should be a number");
+    }
+
+    #[test]
+    fn test_env_filenames_without_a_usable_extension() {
+        for name in [
+            ".env",
+            ".env.local",
+            ".env.example",
+            ".env.production",
+            "backend.example.env",
+            "api.env.example",
+            "env.example",
+        ] {
+            assert!(
+                get_config_for_file(name).is_some(),
+                "{name} should resolve to a highlight config"
+            );
+        }
+        assert!(
+            get_config_for_file("environment.txt").is_none(),
+            "unrelated files should not match the .env rule"
+        );
+        // A real extension wins over the filename rule.
+        let rust = get_config_for_file("env.rs").expect("env.rs should resolve");
+        assert!(std::ptr::eq(
+            rust,
+            get_config_for_file("main.rs").expect("main.rs should resolve")
+        ));
+    }
+
+    #[test]
+    fn test_yaml_highlighting() {
+        use config::HIGHLIGHT_NAMES;
+        let code = r#"# a comment
+name: lumen
+version: 2
+enabled: true
+tags: ["a", "b"]
+"#;
+        let result = highlight_code(code, "test.yaml");
+        assert!(!result.is_empty(), "YAML highlighting should produce output");
+
+        let idx = |n: &str| HIGHLIGHT_NAMES.iter().position(|&x| x == n);
+        let tagged = |text: &str, name: &str| {
+            result
+                .iter()
+                .any(|(t, h)| t.trim() == text && *h == idx(name))
+        };
+
+        assert!(tagged("# a comment", "comment"), "comment should be tagged");
+        assert!(tagged("name", "property"), "mapping key should be a property");
+        assert!(tagged("lumen", "string"), "scalar value should be a string");
+        assert!(tagged("2", "number"), "integer scalar should be a number");
+        // @boolean has no HIGHLIGHT_NAMES entry; the query remaps it.
+        assert!(tagged("true", "constant.builtin"), "boolean should be tagged");
+    }
+
+    #[test]
+    fn test_sql_highlighting() {
+        use config::HIGHLIGHT_NAMES;
+        let code = r#"-- a comment
+SELECT t.id, count(*) AS n
+FROM public.users AS t
+WHERE t.name = 'bob' AND t.age > 42
+GROUP BY t.id;
+"#;
+        let result = highlight_code(code, "test.sql");
+        assert!(!result.is_empty(), "SQL highlighting should produce output");
+
+        let idx = |n: &str| HIGHLIGHT_NAMES.iter().position(|&x| x == n);
+        let tagged = |text: &str, name: &str| {
+            result
+                .iter()
+                .any(|(t, h)| t.trim() == text && *h == idx(name))
+        };
+
+        assert!(tagged("-- a comment", "comment"), "comment should be tagged");
+        assert!(tagged("SELECT", "keyword"), "SELECT should be a keyword");
+        assert!(tagged("'bob'", "string"), "quoted literal should be a string");
+        // The grammar lumps every scalar into (literal); the #match? refinement
+        // splits numbers back out.
+        assert!(tagged("42", "number"), "numeric literal should be a number");
+        assert!(tagged("public", "module"), "schema should be a module");
+        assert!(tagged("users", "type"), "table should be a type");
+        assert!(tagged("id", "variable.member"), "column should be a member");
+    }
+
+    #[test]
+    fn test_astro_highlighting() {
+        use config::HIGHLIGHT_NAMES;
+        let code = r#"---
+const title: string = "hi";
+---
+<h1 class="a">{title}</h1>
+<style>
+.a { color: red; }
+</style>
+<script>let msg = "hey";</script>
+"#;
+        let result = highlight_code(code, "test.astro");
+        assert!(!result.is_empty(), "Astro highlighting should produce output");
+
+        let idx = |n: &str| HIGHLIGHT_NAMES.iter().position(|&x| x == n);
+        let tagged = |text: &str, name: &str| {
+            result
+                .iter()
+                .any(|(t, h)| t.trim() == text && *h == idx(name))
+        };
+
+        assert!(tagged("h1", "tag"), "tag name should be tagged");
+        assert!(tagged("class", "attribute"), "attribute should be tagged");
+        // Everything below this line comes from an injected grammar.
+        assert!(tagged("const", "keyword"), "frontmatter TS should be injected");
+        assert!(tagged("color", "property"), "<style> CSS should be injected");
+        assert!(tagged("\"hey\"", "string"), "<script> TS should be injected");
+    }
+
+    #[test]
+    fn test_astro_file_highlighter_frontmatter_line() {
+        use config::HIGHLIGHT_NAMES;
+        let code = r#"---
+const title: string = "hi";
+---
+<h1>{title}</h1>
+"#;
+        let highlighter = FileHighlighter::new(code, "test.astro");
+        assert!(!highlighter.is_empty(), "Highlighter should have content");
+
+        let keyword_idx = HIGHLIGHT_NAMES
+            .iter()
+            .position(|&n| n == "keyword")
+            .expect("keyword highlight should exist");
+
+        // Line 2 is inside the injected TypeScript layer.
+        let spans = highlighter.get_line_spans(2, None);
+        let const_span = spans
+            .iter()
+            .find(|s| s.content == "const")
+            .expect("frontmatter should be split onto line 2");
+        assert_eq!(const_span.style.fg, Some(highlight_color(keyword_idx)));
     }
 
     #[test]

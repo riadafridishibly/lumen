@@ -107,11 +107,7 @@ fn max_h_scroll(state: &mut AppState, term_width: u16) -> u16 {
         return 0;
     }
 
-    let sidebar_width = if state.show_sidebar {
-        (term_width / 4).clamp(20, 35)
-    } else {
-        0
-    };
+    let sidebar_width = state.sidebar_width(term_width);
     // The renderer collapses to a single panel for added or deleted files,
     // regardless of the diff_fullscreen toggle, so mirror that here.
     let effective_fullscreen = if diff.old_content.is_empty() && !diff.new_content.is_empty() {
@@ -182,22 +178,13 @@ fn max_sidebar_h_scroll(state: &AppState, term_width: u16) -> u16 {
     if !state.show_sidebar {
         return 0;
     }
-    let sidebar_width = (term_width / 4).clamp(20, 35) as usize;
     // Sidebar uses Borders::TOP | LEFT | BOTTOM (the right edge is shared
     // with the diff panel's left border), so only the left border eats width.
-    let inner_width = sidebar_width.saturating_sub(1);
-
-    let mut max_label = 0usize;
-    for item in &state.sidebar_items {
-        let len = match item {
-            SidebarItem::Directory { name, depth, .. } => {
-                depth * 2 + 2 + 1 + 1 + name.chars().count()
-            }
-            SidebarItem::File { name, depth, .. } => depth * 2 + 2 + 1 + 1 + name.chars().count(),
-        };
-        max_label = max_label.max(len);
-    }
-    max_label.saturating_sub(inner_width).min(u16::MAX as usize) as u16
+    let inner_width = state.sidebar_width(term_width).saturating_sub(1) as usize;
+    state
+        .max_sidebar_label_width()
+        .saturating_sub(inner_width)
+        .min(u16::MAX as usize) as u16
 }
 
 /// Clamp `state.sidebar_h_scroll` against the rightmost meaningful offset.
@@ -457,7 +444,7 @@ fn run_app_internal(
                         state.h_scroll
                     },
                     state.watching,
-                    state.show_sidebar,
+                    state.sidebar_width(frame.area().width),
                     state.focused_panel,
                     state.sidebar_selected,
                     state.sidebar_scroll,
@@ -500,11 +487,7 @@ fn run_app_internal(
                     let t = theme::get();
                     let term = frame.area();
                     let header_h: u16 = if state.stacked_mode { 1 } else { 0 };
-                    let sidebar_w: u16 = if state.show_sidebar {
-                        (term.width / 4).clamp(20, 35)
-                    } else {
-                        0
-                    };
+                    let sidebar_w: u16 = state.sidebar_width(term.width);
                     let layout = PanelLayout::calculate(
                         term.width,
                         sidebar_w,
@@ -861,11 +844,7 @@ fn run_app_internal(
                     let term_size = terminal.size()?;
                     let footer_height = 1u16;
                     let header_height = if state.stacked_mode { 1u16 } else { 0u16 };
-                    let sidebar_width = if state.show_sidebar {
-                        (term_size.width / 4).clamp(20, 35)
-                    } else {
-                        0u16
-                    };
+                    let sidebar_width = state.sidebar_width(term_size.width);
 
                     // For new/deleted files the renderer uses a single full-width panel,
                     // so override diff_fullscreen so PanelLayout matches.
@@ -1286,6 +1265,13 @@ fn run_app_internal(
                             if !state.show_sidebar {
                                 state.focused_panel = FocusedPanel::DiffView;
                             }
+                        }
+                        KeyCode::BackTab => {
+                            state.sidebar_expanded = !state.sidebar_expanded;
+                            // Widening a hidden sidebar would be a no-op, so reveal it.
+                            state.show_sidebar = true;
+                            let term_width = terminal.size()?.width;
+                            clamp_sidebar_h_scroll(&mut state, term_width);
                         }
                         KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                             if !state.file_diffs.is_empty() {
@@ -2034,6 +2020,10 @@ fn run_app_internal(
                                             KeyBind {
                                                 key: "tab",
                                                 description: "Toggle sidebar",
+                                            },
+                                            KeyBind {
+                                                key: "shift+tab",
+                                                description: "Toggle sidebar width",
                                             },
                                             KeyBind {
                                                 key: "1 / 2",
