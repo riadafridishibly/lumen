@@ -38,7 +38,6 @@ pub enum FileStatus {
 }
 
 pub enum ModalContent {
-    #[allow(dead_code)]
     Info { title: String, message: String },
     Confirm { title: String, message: String },
     #[allow(dead_code)]
@@ -102,7 +101,6 @@ pub enum ModalResult {
 }
 
 impl Modal {
-    #[allow(dead_code)]
     pub fn info(title: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             content: ModalContent::Info {

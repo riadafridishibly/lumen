@@ -56,6 +56,14 @@ pub struct CommitInfo {
     pub date: String,
 }
 
+impl CommitInfo {
+    /// Abbreviated commit id, matching StackedCommitInfo: 7 chars for git, 12 for jj.
+    pub fn short_id(&self) -> &str {
+        let len = if self.change_id.is_some() { 12 } else { 7 };
+        &self.commit_id[..len.min(self.commit_id.len())]
+    }
+}
+
 /// Abstraction over git and jj backends.
 ///
 /// Note: This trait intentionally does not require `Send + Sync` bounds.

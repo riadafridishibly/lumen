@@ -58,7 +58,7 @@ use super::{
 use spinoff::{spinners, Color, Spinner};
 
 use crate::commit_reference::CommitReference;
-use crate::vcs::{StackedCommitInfo, VcsBackend};
+use crate::vcs::{CommitInfo, StackedCommitInfo, VcsBackend};
 
 /// Navigate to a different commit in stacked mode.
 /// Returns true if navigation was successful.
@@ -243,7 +243,9 @@ pub fn run_app_with_pr(
     backend: &dyn VcsBackend,
 ) -> io::Result<()> {
     match load_pr_file_diffs(&pr_info) {
-        Ok(file_diffs) => run_app_internal(options, Some(pr_info), file_diffs, None, backend),
+        Ok(file_diffs) => {
+            run_app_internal(options, Some(pr_info), file_diffs, None, None, backend)
+        },
         Err(_) => std::process::exit(1),
     }
 }
@@ -254,7 +256,7 @@ pub fn run_app(
     backend: &dyn VcsBackend,
 ) -> io::Result<()> {
     let file_diffs = load_file_diffs(&options, backend);
-    run_app_internal(options, pr_info, file_diffs, None, backend)
+    run_app_internal(options, pr_info, file_diffs, None, None, backend)
 }
 
 pub fn run_app_stacked(
@@ -265,7 +267,16 @@ pub fn run_app_stacked(
     // Load the first commit's diff
     let first_commit = &commits[0];
     let file_diffs = load_single_commit_diffs(&first_commit.commit_id, &options.file, backend);
-    run_app_internal(options, None, file_diffs, Some(commits), backend)
+    run_app_internal(options, None, file_diffs, Some(commits), None, backend)
+}
+
+pub fn run_app_show(
+    options: DiffOptions,
+    commit: CommitInfo,
+    backend: &dyn VcsBackend,
+) -> io::Result<()> {
+    let file_diffs = load_file_diffs(&options, backend);
+    run_app_internal(options, None, file_diffs, None, Some(commit), backend)
 }
 
 /// Sync viewed files from GitHub to local state
@@ -285,6 +296,7 @@ fn run_app_internal(
     pr_info: Option<PrInfo>,
     file_diffs: Vec<super::types::FileDiff>,
     stacked_commits: Option<Vec<StackedCommitInfo>>,
+    show_commit: Option<CommitInfo>,
     backend: &dyn VcsBackend,
 ) -> io::Result<()> {
     theme::init(options.theme.as_deref());
@@ -314,6 +326,15 @@ fn run_app_internal(
     // Initialize stacked mode if commits were provided
     if let Some(commits) = stacked_commits {
         state.init_stacked_mode(commits);
+    }
+
+    if let Some(commit) = show_commit {
+        state.set_diff_reference(Some(commit.short_id().to_string()));
+        // The header only needs the metadata; the viewer loads file contents itself.
+        state.show_commit = Some(CommitInfo {
+            diff: String::new(),
+            ..commit
+        });
     }
 
     // Load viewed files from GitHub on startup in PR mode (before TUI starts)
@@ -462,6 +483,7 @@ fn run_app_internal(
                     state.current_commit(),
                     state.current_commit_index,
                     state.stacked_commits.len(),
+                    state.show_commit.as_ref(),
                     &side_by_side,
                     state.vcs_name,
                     &state.annotations,
@@ -486,7 +508,7 @@ fn run_app_internal(
                 {
                     let t = theme::get();
                     let term = frame.area();
-                    let header_h: u16 = if state.stacked_mode { 1 } else { 0 };
+                    let header_h: u16 = state.header_height();
                     let sidebar_w: u16 = state.sidebar_width(term.width);
                     let layout = PanelLayout::calculate(
                         term.width,
@@ -843,7 +865,7 @@ fn run_app_internal(
                 Event::Mouse(mouse) if active_modal.is_none() => {
                     let term_size = terminal.size()?;
                     let footer_height = 1u16;
-                    let header_height = if state.stacked_mode { 1u16 } else { 0u16 };
+                    let header_height = state.header_height();
                     let sidebar_width = state.sidebar_width(term_size.width);
 
                     // For new/deleted files the renderer uses a single full-width panel,
@@ -2006,6 +2028,17 @@ fn run_app_internal(
                                 );
                             }
                         }
+                        KeyCode::Char('M') => {
+                            if let Some(commit) = &state.show_commit {
+                                active_modal = Some(Modal::info(
+                                    format!("Commit {}", commit.short_id()),
+                                    format!(
+                                        "Author: {}\nDate:   {}\n\n{}",
+                                        commit.author, commit.date, commit.message
+                                    ),
+                                ));
+                            }
+                        }
                         KeyCode::Char('?') => {
                             active_modal = Some(Modal::keybindings(
                                 "Keybindings",
@@ -2060,6 +2093,10 @@ fn run_app_internal(
                                             KeyBind {
                                                 key: "ctrl+l / ctrl+h",
                                                 description: "Next / prev commit (stacked)",
+                                            },
+                                            KeyBind {
+                                                key: "M",
+                                                description: "Full commit message (show)",
                                             },
                                             KeyBind {
                                                 key: "?",

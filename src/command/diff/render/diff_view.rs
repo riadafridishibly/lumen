@@ -91,6 +91,64 @@ use crate::command::diff::PrInfo;
 use super::footer::{render_footer, FooterData};
 use super::sidebar::render_sidebar;
 
+/// Render the header bar for `lumen show`: id and subject on the left, author, date and
+/// the full-message hint on the right.
+fn render_commit_header(frame: &mut Frame, area: Rect, commit: &CommitInfo, vcs_name: &str) {
+    let t = theme::get();
+    let bg = t.ui.bg;
+    let spacer_style = Style::default().bg(bg);
+    let badge_style = Style::default().bg(t.ui.footer_branch_bg);
+
+    let vcs_indicator = format!(" {} ", vcs_name);
+    let id_label = match &commit.change_id {
+        Some(change_id) => format!(
+            " {} {} ",
+            &change_id[..8.min(change_id.len())],
+            commit.short_id()
+        ),
+        None => format!(" {} ", commit.short_id()),
+    };
+    let author = commit.author.split(" <").next().unwrap_or(&commit.author);
+    // Drop the seconds from "YYYY-MM-DD HH:MM:SS"
+    let date = commit.date.get(..16).unwrap_or(&commit.date);
+    let byline = format!("  {} · {}  ", author, date);
+    let hint_key = "M";
+    let hint = " message ";
+
+    let fixed: usize = [" ", &vcs_indicator, " ", &id_label, "  ", &byline, hint_key, hint]
+        .iter()
+        .map(|s| s.chars().count())
+        .sum();
+    let available = (area.width as usize).saturating_sub(fixed);
+    let subject = commit.message.lines().next().unwrap_or("");
+    let subject: String = if subject.chars().count() <= available {
+        subject.to_string()
+    } else if available == 0 {
+        String::new()
+    } else {
+        let mut s: String = subject.chars().take(available - 1).collect();
+        s.push('…');
+        s
+    };
+    let padding = available.saturating_sub(subject.chars().count());
+
+    let spans = vec![
+        Span::styled(" ", spacer_style),
+        Span::styled(vcs_indicator, badge_style.fg(t.ui.text_muted)),
+        Span::styled(" ", spacer_style),
+        Span::styled(id_label, badge_style.fg(t.ui.footer_branch_fg)),
+        Span::styled("  ", spacer_style),
+        Span::styled(subject, Style::default().fg(t.ui.text_secondary).bg(bg)),
+        Span::styled(" ".repeat(padding), spacer_style),
+        Span::styled(byline, Style::default().fg(t.ui.text_muted).bg(bg)),
+        Span::styled(hint_key, Style::default().fg(t.ui.text_primary).bg(bg)),
+        Span::styled(hint, Style::default().fg(t.ui.text_muted).bg(bg)),
+    ];
+
+    let header = Paragraph::new(Line::from(spans)).style(Style::default().bg(bg));
+    frame.render_widget(header, area);
+}
+
 /// Render the header bar for stacked diff mode showing commit info with navigation arrows
 fn render_stacked_header(
     frame: &mut Frame,
@@ -984,7 +1042,7 @@ fn render_context_lines(
     }
 }
 
-use crate::vcs::StackedCommitInfo;
+use crate::vcs::{CommitInfo, StackedCommitInfo};
 
 /// Compute side_by_side index ranges for line-range targets.
 /// Returns `(first_sbs_idx, last_sbs_idx, panel)` for each target that has matching lines.
@@ -1275,6 +1333,7 @@ pub fn render_diff(
     stacked_commit: Option<&StackedCommitInfo>,
     stacked_index: usize,
     stacked_total: usize,
+    show_commit: Option<&CommitInfo>,
     side_by_side: &[DiffLine],
     vcs_name: &str,
     annotations: &[Annotation],
@@ -1292,8 +1351,8 @@ pub fn render_diff(
     let h_scroll = if settings.wrap { 0 } else { h_scroll };
     let show_sidebar = sidebar_width > 0;
 
-    // Layout: header (if stacked) + main content + footer
-    let (content_area, footer_area) = if stacked_mode {
+    // Layout: header (if stacked or show) + main content + footer
+    let (content_area, footer_area) = if stacked_mode || show_commit.is_some() {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -1303,15 +1362,17 @@ pub fn render_diff(
             ])
             .split(area);
 
-        // Render stacked header
-        render_stacked_header(
-            frame,
-            chunks[0],
-            stacked_commit,
-            stacked_index,
-            stacked_total,
-            vcs_name,
-        );
+        match show_commit {
+            Some(commit) => render_commit_header(frame, chunks[0], commit, vcs_name),
+            None => render_stacked_header(
+                frame,
+                chunks[0],
+                stacked_commit,
+                stacked_index,
+                stacked_total,
+                vcs_name,
+            ),
+        }
 
         (chunks[1], chunks[2])
     } else {
@@ -2398,3 +2459,41 @@ pub fn render_diff(
     (content_row_offset, overlay_gaps, annotation_rects, editor_rect)
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::{backend::TestBackend, Terminal};
+
+    fn header_text(commit: &CommitInfo, width: u16) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(width, 1)).unwrap();
+        terminal
+            .draw(|frame| render_commit_header(frame, frame.area(), commit, "git"))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        (0..width).map(|x| buffer[(x, 0)].symbol()).collect()
+    }
+
+    #[test]
+    fn test_commit_header_fits_or_truncates_subject() {
+        let commit = CommitInfo {
+            commit_id: "e0a19ea1b2c3d4e5f60718293a4b5c6d7e8f9012".into(),
+            change_id: None,
+            message: "docs: note the wider file‑type detection — ünïcödé\n\nBody text".into(),
+            diff: String::new(),
+            author: "Riad <riad@example.com>".into(),
+            date: "2026-09-30 13:55:42".into(),
+        };
+
+        let wide = header_text(&commit, 140);
+        assert!(wide.contains("e0a19ea"), "short id should show: {wide}");
+        assert!(wide.contains("ünïcödé"), "full subject should fit: {wide}");
+        assert!(wide.contains("Riad · 2026-09-30 13:55"), "byline should drop email and seconds: {wide}");
+        assert!(!wide.contains("Body text"), "only the subject belongs in the header");
+
+        // Multibyte subject cut mid-string must not panic, and must be marked.
+        let narrow = header_text(&commit, 70);
+        assert!(narrow.contains('…'), "subject should be truncated: {narrow}");
+        assert!(narrow.contains("M message"), "hint should stay visible: {narrow}");
+    }
+}

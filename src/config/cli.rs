@@ -148,6 +148,27 @@ pub enum Commands {
         #[arg(long)]
         wrap: bool,
     },
+    /// Show a commit's message and diff in the diff viewer, like git show
+    Show {
+        /// Commit to show: SHA, branch, tag, HEAD~2, or a jj revision (default: HEAD, or @- for jj)
+        reference: Option<String>,
+
+        /// Filter to specific files
+        #[arg(short, long)]
+        file: Option<Vec<String>>,
+
+        /// Color theme (e.g., dracula, nord, gruvbox-dark, catppuccin-mocha)
+        #[arg(short, long)]
+        theme: Option<String>,
+
+        /// Initially focus on this file path
+        #[arg(long)]
+        focus: Option<String>,
+
+        /// Soft-wrap long diff lines instead of scrolling horizontally
+        #[arg(long)]
+        wrap: bool,
+    },
     /// Interactively configure Lumen (provider, API key)
     Configure,
 }

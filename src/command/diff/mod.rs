@@ -23,7 +23,7 @@ use std::thread;
 use spinoff::{spinners, Color, Spinner};
 
 use crate::commit_reference::CommitReference;
-use crate::vcs::VcsBackend;
+use crate::vcs::{CommitInfo, VcsBackend};
 
 pub struct DiffOptions {
     pub reference: Option<CommitReference>,
@@ -451,4 +451,15 @@ pub fn run_diff_ui(mut options: DiffOptions, backend: &dyn VcsBackend) -> io::Re
     }
 
     app::run_app(options, None, backend)
+}
+
+/// Open one commit in the diff viewer with its message in a header, like `git show`.
+pub fn run_show_ui(
+    mut options: DiffOptions,
+    commit: CommitInfo,
+    backend: &dyn VcsBackend,
+) -> io::Result<()> {
+    // Pin the diff to the resolved id so `r` can't drift if a ref like HEAD moves.
+    options.reference = Some(CommitReference::Single(commit.commit_id.clone()));
+    app::run_app_show(options, commit, backend)
 }

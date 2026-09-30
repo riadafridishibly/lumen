@@ -12,7 +12,7 @@ use crate::command::diff::types::{
     build_file_tree, CursorPosition, DiffFullscreen, DiffLine, DiffPanelFocus,
     DiffViewSettings, FileDiff, FocusedPanel, Selection, SelectionMode, SidebarItem,
 };
-use crate::vcs::StackedCommitInfo;
+use crate::vcs::{CommitInfo, StackedCommitInfo};
 
 #[derive(Default, Clone, Copy, PartialEq)]
 pub enum PendingKey {
@@ -183,6 +183,8 @@ pub struct AppState {
     pub current_commit_index: usize,
     /// Tracks viewed files per commit SHA (commit SHA -> set of viewed filenames)
     stacked_viewed_files: HashMap<String, HashSet<String>>,
+    /// The commit opened by `lumen show`, rendered in the header
+    pub show_commit: Option<CommitInfo>,
     /// VCS backend name ("git" or "jj")
     pub vcs_name: &'static str,
     /// The commit reference used to open the diff (e.g., "HEAD~2..HEAD", "main..feature")
@@ -315,6 +317,7 @@ impl AppState {
             stacked_commits: Vec::new(),
             current_commit_index: 0,
             stacked_viewed_files: HashMap::new(),
+            show_commit: None,
             vcs_name: "git", // Default, will be set by caller
             diff_reference: None,
             diff_panel_focus: DiffPanelFocus::default(),
@@ -760,6 +763,15 @@ impl AppState {
         self.stacked_mode = true;
         self.stacked_commits = commits;
         self.current_commit_index = 0;
+    }
+
+    /// Rows above the content area: one for the stacked or show header, else none.
+    pub fn header_height(&self) -> u16 {
+        if self.stacked_mode || self.show_commit.is_some() {
+            1
+        } else {
+            0
+        }
     }
 
     /// Get the current commit info if in stacked mode
