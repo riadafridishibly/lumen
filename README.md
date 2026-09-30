@@ -17,6 +17,7 @@ Review `git diff`, commits, branches, or GitHub PRs side-by-side without leaving
 - [x] SQL syntax highlighting
 - [x] YAML syntax highlighting
 - [x] Swift syntax highlighting
+- [x] Svelte and Objective-C (`.m`, `.mm`) syntax highlighting
 - [x] `lumen show [ref]`: open one commit in the diff viewer with its subject, author and date in a header (`M` shows the full message)
 - [x] `.env` file syntax highlighting
 - [x] Wide sidebar mode, toggled with `shift+tab`
