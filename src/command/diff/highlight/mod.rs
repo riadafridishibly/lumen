@@ -327,6 +327,9 @@ mod tests {
         assert!(extensions.contains(&"astro"), "Astro config should be loaded");
         assert!(extensions.contains(&"cs"), "C# config should be loaded");
         assert!(extensions.contains(&"swift"), "Swift config should be loaded");
+        assert!(extensions.contains(&"svelte"), "Svelte config should be loaded");
+        assert!(extensions.contains(&"m"), "Objective-C config should be loaded");
+        assert!(extensions.contains(&"mm"), "Objective-C++ config should be loaded");
     }
 
     #[test]
@@ -562,6 +565,90 @@ struct User {
         assert!(tagged("defer", "keyword"), "defer should be a keyword");
         assert!(tagged("hi", "string"), "string text should be a string");
         assert!(tagged("true", "constant.builtin"), "boolean should be tagged");
+    }
+
+    #[test]
+    fn test_svelte_highlighting() {
+        use config::HIGHLIGHT_NAMES;
+        let code = r#"<script lang="ts">
+  let count: number = 0;
+</script>
+
+<!-- a comment -->
+{#if count > 1}
+  <button on:click={() => count++}>Clicked</button>
+{/if}
+
+<style>
+  button { color: red; }
+</style>
+"#;
+        let result = highlight_code(code, "App.svelte");
+
+        let idx = |n: &str| HIGHLIGHT_NAMES.iter().position(|&x| x == n);
+        let tagged = |text: &str, name: &str| {
+            result
+                .iter()
+                .any(|(t, h)| t.trim() == text && *h == idx(name))
+        };
+
+        assert!(tagged("<!-- a comment -->", "comment"), "comment should be tagged");
+        assert!(tagged("button", "tag"), "tag name should be a tag");
+        assert!(tagged("on:click", "attribute"), "directive should be an attribute");
+        assert!(tagged("#if", "keyword"), "block tag should be a keyword");
+        assert!(tagged("/if", "keyword"), "block end should be a keyword");
+        // Injected languages.
+        assert!(tagged("let", "keyword"), "script should be highlighted as TypeScript");
+        assert!(tagged("number", "type.builtin"), "script type should be highlighted");
+        assert!(tagged("1", "number"), "block condition should be highlighted");
+        assert!(tagged("color", "property"), "style should be highlighted as CSS");
+    }
+
+    #[test]
+    fn test_objc_highlighting() {
+        use config::HIGHLIGHT_NAMES;
+        let code = r#"// a comment
+#import <Foundation/Foundation.h>
+
+@interface User : NSObject
+@property (nonatomic, strong) NSString *name;
+- (BOOL)greet:(int)times;
+@end
+
+@implementation User
+- (BOOL)greet:(int)times {
+    [self.name appendString:@"hi"];
+    return YES;
+}
+@end
+"#;
+        let result = highlight_code(code, "User.m");
+
+        let idx = |n: &str| HIGHLIGHT_NAMES.iter().position(|&x| x == n);
+        let tagged = |text: &str, name: &str| {
+            result
+                .iter()
+                .any(|(t, h)| t.trim() == text && *h == idx(name))
+        };
+
+        // From the inherited C query.
+        assert!(tagged("// a comment", "comment"), "comment should be tagged");
+        assert!(tagged("int", "type.builtin"), "C primitive should be a builtin type");
+        assert!(tagged("return", "keyword"), "C keyword should be tagged");
+        // Objective-C additions.
+        assert!(tagged("#import", "function.macro"), "#import should be a directive");
+        assert!(tagged("@interface", "keyword"), "@interface should be a keyword");
+        assert!(tagged("@end", "keyword"), "@end should be a keyword");
+        assert!(tagged("User", "type"), "class name should be a type");
+        assert!(tagged("NSObject", "type"), "superclass should be a type");
+        assert!(tagged("nonatomic", "keyword"), "property attribute should be a keyword");
+        assert!(tagged("BOOL", "type.builtin"), "BOOL should be a builtin type");
+        assert!(tagged("greet", "function.method"), "selector should be a method");
+        assert!(tagged("times", "variable.parameter"), "parameter should be tagged");
+        assert!(tagged("self", "variable.builtin"), "self should be a builtin");
+        assert!(tagged("appendString", "function.method"), "message should be a method");
+        assert!(tagged("@\"hi\"", "string"), "NSString literal should be a string");
+        assert!(tagged("YES", "constant.builtin"), "YES should be a builtin constant");
     }
 
     #[test]

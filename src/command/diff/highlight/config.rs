@@ -209,6 +209,16 @@ pub static CONFIGS: Lazy<Vec<(&'static str, LanguageConfig)>> = Lazy::new(|| {
         &mut configs,
     );
 
+    // No Objective-C++ grammar exists. The ObjC grammar only loses C++-only lines
+    // (templates, range-for) in .mm files, while the C++ grammar loses every ObjC block.
+    load_config_exts(
+        tree_sitter_objc::LANGUAGE.into(),
+        "objc",
+        &format!("{C_HIGHLIGHTS}{OBJC_HIGHLIGHTS}"),
+        &["m", "mm"],
+        &mut configs,
+    );
+
     load_config_exts(
         tree_sitter_ruby::LANGUAGE.into(),
         "ruby",
@@ -303,6 +313,15 @@ pub static CONFIGS: Lazy<Vec<(&'static str, LanguageConfig)>> = Lazy::new(|| {
         ASTRO_HIGHLIGHTS,
         ASTRO_INJECTIONS,
         "astro",
+        &mut configs,
+    );
+
+    load_config_with_injections(
+        tree_sitter_svelte_ng::LANGUAGE.into(),
+        "svelte",
+        SVELTE_HIGHLIGHTS,
+        SVELTE_INJECTIONS,
+        "svelte",
         &mut configs,
     );
 
