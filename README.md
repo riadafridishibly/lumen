@@ -16,6 +16,7 @@ Review `git diff`, commits, branches, or GitHub PRs side-by-side without leaving
 - [x] Astro syntax highlighting
 - [x] SQL syntax highlighting
 - [x] YAML syntax highlighting
+- [x] Swift syntax highlighting
 - [x] `.env` file syntax highlighting
 - [x] Wide sidebar mode, toggled with `shift+tab`
 - [x] Highlighting for more extensions and whole filenames (`.mjs`, `.cjs`, `.mts`, `.cts`, `.pyi`, `.zsh`, `.jsonc`, `Gemfile`, `Cargo.lock`, `.bashrc`, and more)
