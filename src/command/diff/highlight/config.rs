@@ -201,6 +201,14 @@ pub static CONFIGS: Lazy<Vec<(&'static str, LanguageConfig)>> = Lazy::new(|| {
         &mut configs,
     );
 
+    load_config(
+        tree_sitter_swift::LANGUAGE.into(),
+        "swift",
+        SWIFT_HIGHLIGHTS,
+        "swift",
+        &mut configs,
+    );
+
     load_config_exts(
         tree_sitter_ruby::LANGUAGE.into(),
         "ruby",

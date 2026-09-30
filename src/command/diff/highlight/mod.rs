@@ -325,6 +325,8 @@ mod tests {
         assert!(extensions.contains(&"yml"), "YAML .yml config should be loaded");
         assert!(extensions.contains(&"sql"), "SQL config should be loaded");
         assert!(extensions.contains(&"astro"), "Astro config should be loaded");
+        assert!(extensions.contains(&"cs"), "C# config should be loaded");
+        assert!(extensions.contains(&"swift"), "Swift config should be loaded");
     }
 
     #[test]
@@ -520,6 +522,46 @@ GROUP BY t.id;
         assert!(tagged("public", "module"), "schema should be a module");
         assert!(tagged("users", "type"), "table should be a type");
         assert!(tagged("id", "variable.member"), "column should be a member");
+    }
+
+    #[test]
+    fn test_swift_highlighting() {
+        use config::HIGHLIGHT_NAMES;
+        let code = r#"// a comment
+import Foundation
+
+struct User {
+    let name: String
+    func greet(times: Int) -> Bool {
+        defer { log.flush() }
+        print("hi")
+        return true
+    }
+}
+"#;
+        let result = highlight_code(code, "test.swift");
+        assert!(!result.is_empty(), "Swift highlighting should produce output");
+
+        let idx = |n: &str| HIGHLIGHT_NAMES.iter().position(|&x| x == n);
+        let tagged = |text: &str, name: &str| {
+            result
+                .iter()
+                .any(|(t, h)| t.trim() == text && *h == idx(name))
+        };
+
+        assert!(tagged("// a comment", "comment"), "comment should be tagged");
+        assert!(tagged("import", "keyword"), "import should be a keyword");
+        assert!(tagged("struct", "keyword"), "struct should be a keyword");
+        assert!(tagged("User", "type"), "type name should be a type");
+        assert!(tagged("name", "variable.member"), "stored property should be a member");
+        // Last match wins, so these must override the catch-all @variable.
+        assert!(tagged("greet", "function.method"), "func name should be a method");
+        assert!(tagged("times", "variable.parameter"), "parameter should be tagged");
+        assert!(tagged("print", "function"), "call should be a function");
+        assert!(tagged("flush", "function"), "method call should beat the member pattern");
+        assert!(tagged("defer", "keyword"), "defer should be a keyword");
+        assert!(tagged("hi", "string"), "string text should be a string");
+        assert!(tagged("true", "constant.builtin"), "boolean should be tagged");
     }
 
     #[test]

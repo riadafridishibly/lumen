@@ -1895,3 +1895,247 @@ pub const YAML_HIGHLIGHTS: &str = r#"
   "..."
 ] @punctuation.special
 "#;
+
+// Adapted from tree-sitter-swift queries/highlights.scm (MIT). The bundled query in
+// the 0.6 crate uses older capture names (@conditional, @repeat, @method) that
+// HIGHLIGHT_NAMES doesn't cover, and 0.7 needs a newer tree-sitter ABI.
+// tree-sitter-highlight lets the last matching pattern win, so the catch-all
+// `(simple_identifier) @variable` sits above the more specific identifier patterns.
+pub const SWIFT_HIGHLIGHTS: &str = r#"
+[
+  (comment)
+  (multiline_comment)
+] @comment
+
+[
+  (line_str_text)
+  (multi_line_str_text)
+  (raw_str_part)
+  (raw_str_end_part)
+  (str_escaped_char)
+  (regex_literal)
+  "\""
+  "\"\"\""
+] @string
+
+[
+  (integer_literal)
+  (hex_literal)
+  (oct_literal)
+  (bin_literal)
+  (real_literal)
+] @number
+
+(boolean_literal) @constant.builtin
+"nil" @constant.builtin
+
+[
+  "("
+  ")"
+  "["
+  "]"
+  "{"
+  "}"
+] @punctuation.bracket
+
+[
+  "."
+  ";"
+  ":"
+  ","
+] @punctuation.delimiter
+
+[
+  (custom_operator)
+  "+"
+  "-"
+  "*"
+  "/"
+  "%"
+  "="
+  "+="
+  "-="
+  "*="
+  "/="
+  "<"
+  ">"
+  "<<"
+  ">>"
+  "<="
+  ">="
+  "++"
+  "--"
+  "^"
+  "&"
+  "&&"
+  "|"
+  "||"
+  "~"
+  "%="
+  "!="
+  "!=="
+  "=="
+  "==="
+  "?"
+  "??"
+  "->"
+  "..<"
+  "..."
+  (bang)
+] @operator
+
+(type_arguments
+  [
+    "<"
+    ">"
+  ] @punctuation.bracket)
+
+[
+  "func"
+  "deinit"
+  "protocol"
+  "extension"
+  "indirect"
+  "nonisolated"
+  "override"
+  "convenience"
+  "required"
+  "some"
+  "any"
+  "weak"
+  "unowned"
+  "didSet"
+  "willSet"
+  "subscript"
+  "let"
+  "var"
+  "enum"
+  "struct"
+  "class"
+  "actor"
+  "typealias"
+  "associatedtype"
+  "async"
+  "await"
+  "import"
+  "case"
+  "fallthrough"
+  "for"
+  "in"
+  "while"
+  "repeat"
+  "continue"
+  "break"
+  "guard"
+  "if"
+  "switch"
+  "return"
+  "do"
+  (throws)
+  (where_keyword)
+  (getter_specifier)
+  (setter_specifier)
+  (modify_specifier)
+  (else)
+  (as_operator)
+  (default_keyword)
+  (try_operator)
+  (throw_keyword)
+  (catch_keyword)
+  (visibility_modifier)
+  (member_modifier)
+  (function_modifier)
+  (property_modifier)
+  (parameter_modifier)
+  (inheritance_modifier)
+  (mutation_modifier)
+  (directive)
+  (shebang_line)
+] @keyword
+
+(simple_identifier) @variable
+
+(type_identifier) @type
+
+((navigation_expression
+  (simple_identifier) @type)
+  (#match? @type "^[A-Z]"))
+
+[
+  (self_expression)
+  (super_expression)
+] @variable.builtin
+
+(class_body
+  (property_declaration
+    (pattern
+      (simple_identifier) @variable.member)))
+
+(protocol_property_declaration
+  (pattern
+    (simple_identifier) @variable.member))
+
+(navigation_expression
+  (navigation_suffix
+    (simple_identifier) @variable.member))
+
+(value_argument
+  name: (value_argument_label
+    (simple_identifier) @variable.member))
+
+(parameter
+  external_name: (simple_identifier) @variable.parameter)
+
+(parameter
+  name: (simple_identifier) @variable.parameter)
+
+(inheritance_constraint
+  (identifier
+    (simple_identifier) @variable.parameter))
+
+(equality_constraint
+  (identifier
+    (simple_identifier) @variable.parameter))
+
+(function_declaration
+  (simple_identifier) @function.method)
+
+(protocol_function_declaration
+  name: (simple_identifier) @function.method)
+
+(init_declaration
+  "init" @constructor)
+
+(call_expression
+  (simple_identifier) @function)
+
+(call_expression
+  (navigation_expression
+    (navigation_suffix
+      (simple_identifier) @function)))
+
+(call_expression
+  (prefix_expression
+    (simple_identifier) @function))
+
+; defer { ... } parses as a call
+((call_expression
+  (simple_identifier) @keyword)
+  (#eq? @keyword "defer"))
+
+(modifiers
+  (attribute
+    "@" @attribute
+    (user_type
+      (type_identifier) @attribute)))
+
+(statement_label) @label
+
+[
+  (diagnostic)
+  (availability_condition)
+  (key_path_string_expression)
+  (selector_expression)
+  (external_macro_definition)
+] @function.macro
+"#;
