@@ -2,7 +2,7 @@ use std::path::Path;
 
 use git2::{Commit, DiffFormat, DiffOptions, Repository, StatusOptions, Time, Tree};
 
-use super::backend::{CommitInfo, StackedCommitInfo, VcsBackend, VcsError};
+use super::backend::{CommitInfo, LogEntry, StackedCommitInfo, VcsBackend, VcsError};
 
 /// Format a duration in seconds as relative time (e.g., "2 hours ago").
 fn format_relative_time(secs_ago: i64) -> String {
@@ -795,6 +795,86 @@ impl VcsBackend for GitBackend {
     fn name(&self) -> &'static str {
         "git"
     }
+
+    fn get_log(&self, reference: &str, limit: usize) -> Result<Vec<LogEntry>, VcsError> {
+        let reference = reference.trim();
+        Self::validate_ref_format(reference)?;
+        let start = self
+            .repo
+            .revparse_single(reference)
+            .and_then(|obj| obj.peel_to_commit())
+            .map_err(|_| VcsError::InvalidRef(reference.to_string()))?;
+
+        // Collect ref names per commit, like `git log --decorate`.
+        let mut decorations: std::collections::HashMap<git2::Oid, Vec<String>> = Default::default();
+        let head = self.repo.head().ok();
+        let head_branch = head
+            .as_ref()
+            .filter(|h| h.is_branch())
+            .and_then(|h| h.name());
+        if let Some(head) = &head {
+            if let Ok(commit) = head.peel_to_commit() {
+                let label = match head.shorthand() {
+                    Some(branch) if head.is_branch() => format!("HEAD -> {}", branch),
+                    _ => "HEAD".to_string(),
+                };
+                decorations.entry(commit.id()).or_default().push(label);
+            }
+        }
+        let refs = self
+            .repo
+            .references()
+            .map_err(|e| VcsError::Other(format!("failed to list refs: {}", e)))?;
+        for r in refs.flatten() {
+            if !(r.is_branch() || r.is_remote() || r.is_tag()) || r.name() == head_branch {
+                continue;
+            }
+            let (Some(name), Ok(commit)) = (r.shorthand(), r.peel_to_commit()) else {
+                continue;
+            };
+            let label = if r.is_tag() {
+                format!("tag: {}", name)
+            } else {
+                name.to_string()
+            };
+            decorations.entry(commit.id()).or_default().push(label);
+        }
+
+        let mut revwalk = self
+            .repo
+            .revwalk()
+            .map_err(|e| VcsError::Other(format!("failed to create revwalk: {}", e)))?;
+        revwalk
+            .push(start.id())
+            .map_err(|e| VcsError::Other(format!("failed to push to revwalk: {}", e)))?;
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+
+        revwalk
+            .take(limit)
+            .map(|oid| {
+                let oid = oid.map_err(|e| VcsError::Other(format!("revwalk error: {}", e)))?;
+                let commit = self
+                    .repo
+                    .find_commit(oid)
+                    .map_err(|e| VcsError::Other(format!("failed to find commit: {}", e)))?;
+                let commit_id = oid.to_string();
+                let author = commit.author().name().unwrap_or("").to_string();
+                Ok(LogEntry {
+                    short_id: commit_id[..7].to_string(),
+                    summary: commit.summary().unwrap_or("").to_string(),
+                    author,
+                    date: format_git_time(&commit.time()),
+                    relative_time: format_relative_time(now - commit.time().seconds()),
+                    refs: decorations.remove(&oid).unwrap_or_default(),
+                    commit_id,
+                })
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -1479,6 +1559,25 @@ mod tests {
             matches!(result2, Err(VcsError::InvalidRef(_))),
             "refs starting with - should be rejected"
         );
+    }
+
+    #[test]
+    fn test_get_log_decorates_refs() {
+        let repo = RepoGuard::new();
+        crate::vcs::test_utils::git(&repo.dir, &["checkout", "-b", "feature"]);
+        let git_repo = Repository::open(&repo.dir).expect("open repo");
+        let head = git_repo.revparse_single("HEAD").expect("resolve HEAD");
+        git_repo
+            .tag_lightweight("v1", &head, false)
+            .expect("create tag");
+
+        let backend = GitBackend::from_cwd().expect("should open repo");
+        let log = backend.get_log("HEAD", 10).expect("log should succeed");
+        let refs = &log[0].refs;
+        // The checked-out branch shows only as "HEAD -> feature", not twice.
+        assert_eq!(refs[0], "HEAD -> feature");
+        assert!(refs.contains(&"tag: v1".to_string()), "{:?}", refs);
+        assert_eq!(refs.len(), 3, "{:?}", refs);
     }
 
     #[test]

@@ -171,6 +171,21 @@ async fn run() -> Result<(), LumenError> {
             };
             command::diff::run_show_ui(options, commit, backend.as_ref())?;
         }
+        Commands::Log {
+            reference,
+            max_count,
+            theme,
+            wrap,
+        } => {
+            let reference = reference.unwrap_or_else(|| backend.working_copy_parent_ref().into());
+            let entries = backend.get_log(&reference, max_count)?;
+            command::log::run(
+                entries,
+                backend.as_ref(),
+                theme.or(config.theme.clone()),
+                wrap || config.wrap.unwrap_or(false),
+            )?;
+        }
         Commands::Configure => {
             command::configure::ConfigureCommand::execute()?;
         }

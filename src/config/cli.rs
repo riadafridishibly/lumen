@@ -169,6 +169,23 @@ pub enum Commands {
         #[arg(long)]
         wrap: bool,
     },
+    /// Browse commits like git log; enter opens one in the diff viewer, q returns to the list
+    Log {
+        /// Commit to start from: branch, tag, SHA (default: HEAD)
+        reference: Option<String>,
+
+        /// Maximum number of commits to list
+        #[arg(short = 'n', long, default_value_t = 1000)]
+        max_count: usize,
+
+        /// Color theme (e.g., dracula, nord, gruvbox-dark, catppuccin-mocha)
+        #[arg(short, long)]
+        theme: Option<String>,
+
+        /// Soft-wrap long diff lines instead of scrolling horizontally
+        #[arg(long)]
+        wrap: bool,
+    },
     /// Interactively configure Lumen (provider, API key)
     Configure,
 }
