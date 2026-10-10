@@ -92,6 +92,7 @@ pub enum ModalResult {
         file_index: usize,
         sbs_line_index: usize,
         panel: MatchPanel,
+        line_no: usize,
     },
     AnnotationJump { annotation_id: u64 },
     AnnotationEdit { annotation_id: u64 },
@@ -1328,6 +1329,7 @@ impl Modal {
                         file_index: e.file_index,
                         sbs_line_index: e.sbs_line_index,
                         panel: e.panel,
+                        line_no: e.line_no,
                     }),
                     KeyCode::PageUp => {
                         state.page_up(page_step);

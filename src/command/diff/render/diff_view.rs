@@ -1831,6 +1831,7 @@ pub fn render_diff(
         }
     } else {
         let (old_area, new_area) = match diff_fullscreen {
+            _ if settings.unified => (None, Some(main_area)),
             DiffFullscreen::OldOnly => (Some(main_area), None),
             DiffFullscreen::NewOnly => (None, Some(main_area)),
             DiffFullscreen::None => {
@@ -1947,7 +1948,7 @@ pub fn render_diff(
         // Add file-level slots at the top (after context lines)
         for slot in &file_slots {
             let num_lines = slot.height();
-            let slot_start = old_lines.len(); // same position in both panels
+            let slot_start = old_lines.len().max(new_lines.len()); // same position in both panels
             for _ in 0..num_lines {
                 if old_area.is_some() {
                     old_lines.push(Line::from(vec![Span::raw("")]));
@@ -1988,6 +1989,14 @@ pub fn render_diff(
             let in_focused = is_in_focused_hunk(line_idx, diff_line.change_type);
             let hunk_viewed = is_line_in_viewed_hunk(line_idx, diff_line.change_type);
             let mut style = DiffLineStyle::for_change_type(diff_line.change_type, bg, t);
+            // Unified view draws deleted rows (no new line) in the single panel
+            // from the old side.
+            let from_old = settings.unified && diff_line.new_line.is_none();
+            if from_old {
+                style.new_bg = style.old_bg;
+                style.new_gutter_bg = style.old_gutter_bg;
+                style.new_gutter_fg = style.old_gutter_fg;
+            }
             if hunk_viewed {
                 // Drop colored bg from the code area; keep the gutter colored.
                 if style.old_bg.is_some() {
@@ -2000,13 +2009,25 @@ pub fn render_diff(
 
             let old_selection_range =
                 get_selection_range_for_line(line_idx, DiffPanelFocus::Old, selection);
-            let new_selection_range =
+            let mut new_selection_range =
                 get_selection_range_for_line(line_idx, DiffPanelFocus::New, selection);
 
             let old_in_annotation =
                 is_in_ann_range(line_idx, Some(DiffPanelFocus::Old), &ann_index_ranges);
-            let new_in_annotation =
+            let mut new_in_annotation =
                 is_in_ann_range(line_idx, Some(DiffPanelFocus::New), &ann_index_ranges);
+
+            if settings.unified {
+                // One panel: a row takes the selection and annotations of
+                // whichever side it has a line on.
+                let has_old = diff_line.old_line.is_some();
+                let has_new = diff_line.new_line.is_some();
+                new_selection_range = old_selection_range
+                    .filter(|_| has_old)
+                    .or(new_selection_range.filter(|_| has_new));
+                new_in_annotation =
+                    (has_old && old_in_annotation) || (has_new && new_in_annotation);
+            }
 
             if new_in_annotation {
                 border_marker_rows.push(rendered_row);
@@ -2139,7 +2160,25 @@ pub fn render_diff(
                     ));
                 }
                 let mut new_line_pushed = false;
-                match &diff_line.new_line {
+                let (side_line, side_segments, side_highlighter, side_panel, word_bg) = if from_old
+                {
+                    (
+                        &diff_line.old_line,
+                        &diff_line.old_segments,
+                        old_highlighter,
+                        MatchPanel::Old,
+                        t.diff.deleted_word_bg,
+                    )
+                } else {
+                    (
+                        &diff_line.new_line,
+                        &diff_line.new_segments,
+                        new_highlighter,
+                        MatchPanel::New,
+                        t.diff.added_word_bg,
+                    )
+                };
+                match side_line {
                     Some((num, _text)) => {
                         let prefix = format!("{:4} ", num);
                         let gutter_bg = style.new_gutter_bg.unwrap_or(Color::Reset);
@@ -2158,22 +2197,21 @@ pub fn render_diff(
                                 .fg(style.new_gutter_fg.unwrap_or(t.ui.line_number))
                                 .bg(gutter_bg),
                         ));
-                        let matches = search_state.get_matches_for_line(line_idx, MatchPanel::New);
+                        let matches = search_state.get_matches_for_line(line_idx, side_panel);
 
-                        // Use word-level rendering for modified lines if segments are available
-                        let content_spans = if matches!(diff_line.change_type, ChangeType::Modified)
-                            && !hunk_viewed
-                        {
-                            if let Some(ref segments) = diff_line.new_segments {
+                        // Use word-level rendering for modified lines if segments are
+                        // available (only paired lines carry segments).
+                        let content_spans = if !hunk_viewed {
+                            if let Some(ref segments) = side_segments {
                                 let emphasis_ranges = segments_to_emphasis_ranges(segments);
                                 apply_word_emphasis_highlight(
                                     _text,
                                     &diff.filename,
                                     style.new_bg,
-                                    t.diff.added_word_bg,
+                                    word_bg,
                                     &emphasis_ranges,
                                     &matches,
-                                    Some(new_highlighter),
+                                    Some(side_highlighter),
                                     Some(*num),
                                     settings.tab_width,
                                 )
@@ -2183,7 +2221,7 @@ pub fn render_diff(
                                     &diff.filename,
                                     style.new_bg,
                                     &matches,
-                                    Some(new_highlighter),
+                                    Some(side_highlighter),
                                     Some(*num),
                                     settings.tab_width,
                                 )
@@ -2194,7 +2232,7 @@ pub fn render_diff(
                                 &diff.filename,
                                 style.new_bg,
                                 &matches,
-                                Some(new_highlighter),
+                                Some(side_highlighter),
                                 Some(*num),
                                 settings.tab_width,
                             )
@@ -2312,7 +2350,14 @@ pub fn render_diff(
                 .scroll((0, h_scroll))
                 .block(
                     Block::default()
-                        .title(Line::styled(" New ", title_style))
+                        .title(Line::styled(
+                            if settings.unified {
+                                " Unified "
+                            } else {
+                                " New "
+                            },
+                            title_style,
+                        ))
                         .borders(new_borders)
                         .style(Style::default().bg(bg))
                         .border_style(border_style),

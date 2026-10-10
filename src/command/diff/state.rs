@@ -4,7 +4,9 @@ use std::time::SystemTime;
 use tree_sitter::{Parser, Tree};
 
 use crate::command::diff::context::get_language_context;
-use crate::command::diff::diff_algo::{compute_side_by_side, count_added_removed, find_hunk_starts};
+use crate::command::diff::diff_algo::{
+    compute_side_by_side, count_added_removed, find_hunk_starts, to_unified,
+};
 use crate::command::diff::highlight::FileHighlighter;
 
 use crate::command::diff::search::SearchState;
@@ -348,6 +350,53 @@ impl AppState {
         (0, 0)
     }
 
+    /// Diff rows for a file, in unified order when the unified view is on.
+    fn compute_rows(&self, file_index: usize) -> Vec<DiffLine> {
+        let diff = &self.file_diffs[file_index];
+        let rows = compute_side_by_side(
+            &diff.old_content,
+            &diff.new_content,
+            self.settings.tab_width,
+        );
+        if self.settings.unified {
+            to_unified(rows)
+        } else {
+            rows
+        }
+    }
+
+    /// Switch between side-by-side and unified rows, keeping the line at the
+    /// top of the view in place.
+    pub fn toggle_unified(&mut self) {
+        self.ensure_cache();
+        let top = self
+            .side_by_side_ref()
+            .get(self.scroll as usize)
+            .and_then(|dl| {
+                let panel = if dl.new_line.is_some() {
+                    DiffPanelFocus::New
+                } else {
+                    DiffPanelFocus::Old
+                };
+                dl.line_number(panel).map(|n| (panel, n))
+            });
+        self.settings.unified = !self.settings.unified;
+        self.diff_fullscreen = DiffFullscreen::None;
+        self.clear_selection();
+        self.cached_side_by_side = None;
+        self.search_dirty = true;
+        self.ensure_cache();
+        if let Some((panel, n)) = top {
+            if let Some(idx) = self
+                .side_by_side_ref()
+                .iter()
+                .position(|dl| dl.line_number(panel) == Some(n))
+            {
+                self.scroll = idx as u16;
+            }
+        }
+    }
+
     /// Get cached side_by_side diff for current file, computing if necessary
     pub fn get_side_by_side(&mut self) -> &[DiffLine] {
         if self.file_diffs.is_empty() {
@@ -361,12 +410,7 @@ impl AppState {
         };
 
         if needs_recompute {
-            let diff = &self.file_diffs[current];
-            let side_by_side = compute_side_by_side(
-                &diff.old_content,
-                &diff.new_content,
-                self.settings.tab_width,
-            );
+            let side_by_side = self.compute_rows(current);
             let hunks = find_hunk_starts(&side_by_side);
             let total = side_by_side.len();
             self.cached_side_by_side = Some((current, side_by_side));
@@ -415,12 +459,7 @@ impl AppState {
             None => true,
         };
         if needs_recompute {
-            let diff = &self.file_diffs[current];
-            let sbs = compute_side_by_side(
-                &diff.old_content,
-                &diff.new_content,
-                self.settings.tab_width,
-            );
+            let sbs = self.compute_rows(current);
             let hnks = find_hunk_starts(&sbs);
             let total = sbs.len();
             self.cached_side_by_side = Some((current, sbs));
@@ -475,7 +514,8 @@ impl AppState {
                 Some((_, data)) => data.as_slice(),
                 None => &[],
             };
-            self.search_state.update_matches(sbs, self.diff_fullscreen);
+            self.search_state
+                .update_matches(sbs, self.diff_fullscreen, self.settings.unified);
             self.search_dirty = false;
         }
     }

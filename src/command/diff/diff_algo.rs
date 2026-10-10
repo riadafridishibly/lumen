@@ -219,3 +219,64 @@ pub fn find_hunk_starts(lines: &[DiffLine]) -> Vec<usize> {
     }
     hunks
 }
+
+/// Reorders side-by-side rows for the unified view. Within each run of
+/// changes, every old line comes first as a deletion, then every new line as
+/// an insertion. Word-level segments stay with their half.
+pub fn to_unified(rows: Vec<DiffLine>) -> Vec<DiffLine> {
+    let mut out = Vec::with_capacity(rows.len());
+    let mut insertions = Vec::new();
+    for row in rows {
+        if matches!(row.change_type, ChangeType::Equal) {
+            out.append(&mut insertions);
+            out.push(row);
+            continue;
+        }
+        if let Some(old) = row.old_line {
+            out.push(DiffLine {
+                old_line: Some(old),
+                new_line: None,
+                change_type: ChangeType::Delete,
+                old_segments: row.old_segments,
+                new_segments: None,
+            });
+        }
+        if let Some(new) = row.new_line {
+            insertions.push(DiffLine {
+                old_line: None,
+                new_line: Some(new),
+                change_type: ChangeType::Insert,
+                old_segments: None,
+                new_segments: row.new_segments,
+            });
+        }
+    }
+    out.append(&mut insertions);
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unified_puts_deletions_before_insertions() {
+        let old = "a\nfoo bar\nb\nc\n";
+        let new = "a\nfoo baz\nx\nc\n";
+        let rows = to_unified(compute_side_by_side(old, new, 4));
+        let shape: Vec<String> = rows
+            .iter()
+            .map(|r| match (&r.old_line, &r.new_line) {
+                (Some((o, _)), Some((n, _))) => format!("={o}/{n}"),
+                (Some((o, _)), None) => format!("-{o}"),
+                (None, Some((n, _))) => format!("+{n}"),
+                (None, None) => unreachable!(),
+            })
+            .collect();
+        assert_eq!(shape, ["=1/1", "-2", "-3", "+2", "+3", "=4/4"]);
+        // The paired line keeps its word-level emphasis on both halves.
+        assert!(rows[1].old_segments.is_some());
+        assert!(rows[3].new_segments.is_some());
+        assert_eq!(find_hunk_starts(&rows), [1]);
+    }
+}
