@@ -22,6 +22,7 @@ Review `git diff`, commits, branches, or GitHub PRs side-by-side without leaving
 - [x] `lumen log [ref]`: browse commits grouped by day with authors, times and branch/tag labels; `enter` opens a commit in the diff viewer, `q` returns to the list, `y` copies the SHA (git only for now)
 - [x] `.env` file syntax highlighting
 - [x] Wide sidebar mode, toggled with `shift+tab`
+- [x] Unified diff view (deletions above insertions in one panel), toggled with `v`
 - [x] Highlighting for more extensions and whole filenames (`.mjs`, `.cjs`, `.mts`, `.cts`, `.pyi`, `.zsh`, `.jsonc`, `Gemfile`, `Cargo.lock`, `.bashrc`, and more)
 
 ## Features
