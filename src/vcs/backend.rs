@@ -38,6 +38,23 @@ pub struct StackedCommitInfo {
     pub summary: String,
 }
 
+/// One commit in `lumen log`.
+#[derive(Clone, Debug)]
+pub struct LogEntry {
+    pub commit_id: String,
+    pub short_id: String,
+    /// First line of the commit message
+    pub summary: String,
+    /// Author name, without email
+    pub author: String,
+    /// Commit timestamp (YYYY-MM-DD HH:MM:SS)
+    pub date: String,
+    /// e.g. "3 hours ago"
+    pub relative_time: String,
+    /// Decorations like git log's: "HEAD -> main", "origin/main", "tag: v1.0"
+    pub refs: Vec<String>,
+}
+
 /// Information about a commit from any VCS.
 #[derive(Debug, Clone)]
 #[allow(dead_code)] // Fields used by git_entity::Commit::from_commit_info
@@ -54,6 +71,14 @@ pub struct CommitInfo {
     pub author: String,
     /// Commit timestamp formatted for display (YYYY-MM-DD HH:MM:SS)
     pub date: String,
+}
+
+impl CommitInfo {
+    /// Abbreviated commit id, matching StackedCommitInfo: 7 chars for git, 12 for jj.
+    pub fn short_id(&self) -> &str {
+        let len = if self.change_id.is_some() { 12 } else { 7 };
+        &self.commit_id[..len.min(self.commit_id.len())]
+    }
 }
 
 /// Abstraction over git and jj backends.
@@ -131,4 +156,13 @@ pub trait VcsBackend {
 
     /// Get the name of this VCS backend ("git" or "jj").
     fn name(&self) -> &'static str;
+
+    /// Get up to `limit` commits reachable from `reference`, newest first.
+    fn get_log(&self, reference: &str, limit: usize) -> Result<Vec<LogEntry>, VcsError> {
+        let _ = (reference, limit);
+        Err(VcsError::Other(format!(
+            "lumen log is not supported for {} yet",
+            self.name()
+        )))
+    }
 }

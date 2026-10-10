@@ -1895,3 +1895,421 @@ pub const YAML_HIGHLIGHTS: &str = r#"
   "..."
 ] @punctuation.special
 "#;
+
+// Adapted from tree-sitter-swift queries/highlights.scm (MIT). The bundled query in
+// the 0.6 crate uses older capture names (@conditional, @repeat, @method) that
+// HIGHLIGHT_NAMES doesn't cover, and 0.7 needs a newer tree-sitter ABI.
+// tree-sitter-highlight lets the last matching pattern win, so the catch-all
+// `(simple_identifier) @variable` sits above the more specific identifier patterns.
+pub const SWIFT_HIGHLIGHTS: &str = r#"
+[
+  (comment)
+  (multiline_comment)
+] @comment
+
+[
+  (line_str_text)
+  (multi_line_str_text)
+  (raw_str_part)
+  (raw_str_end_part)
+  (str_escaped_char)
+  (regex_literal)
+  "\""
+  "\"\"\""
+] @string
+
+[
+  (integer_literal)
+  (hex_literal)
+  (oct_literal)
+  (bin_literal)
+  (real_literal)
+] @number
+
+(boolean_literal) @constant.builtin
+"nil" @constant.builtin
+
+[
+  "("
+  ")"
+  "["
+  "]"
+  "{"
+  "}"
+] @punctuation.bracket
+
+[
+  "."
+  ";"
+  ":"
+  ","
+] @punctuation.delimiter
+
+[
+  (custom_operator)
+  "+"
+  "-"
+  "*"
+  "/"
+  "%"
+  "="
+  "+="
+  "-="
+  "*="
+  "/="
+  "<"
+  ">"
+  "<<"
+  ">>"
+  "<="
+  ">="
+  "++"
+  "--"
+  "^"
+  "&"
+  "&&"
+  "|"
+  "||"
+  "~"
+  "%="
+  "!="
+  "!=="
+  "=="
+  "==="
+  "?"
+  "??"
+  "->"
+  "..<"
+  "..."
+  (bang)
+] @operator
+
+(type_arguments
+  [
+    "<"
+    ">"
+  ] @punctuation.bracket)
+
+[
+  "func"
+  "deinit"
+  "protocol"
+  "extension"
+  "indirect"
+  "nonisolated"
+  "override"
+  "convenience"
+  "required"
+  "some"
+  "any"
+  "weak"
+  "unowned"
+  "didSet"
+  "willSet"
+  "subscript"
+  "let"
+  "var"
+  "enum"
+  "struct"
+  "class"
+  "actor"
+  "typealias"
+  "associatedtype"
+  "async"
+  "await"
+  "import"
+  "case"
+  "fallthrough"
+  "for"
+  "in"
+  "while"
+  "repeat"
+  "continue"
+  "break"
+  "guard"
+  "if"
+  "switch"
+  "return"
+  "do"
+  (throws)
+  (where_keyword)
+  (getter_specifier)
+  (setter_specifier)
+  (modify_specifier)
+  (else)
+  (as_operator)
+  (default_keyword)
+  (try_operator)
+  (throw_keyword)
+  (catch_keyword)
+  (visibility_modifier)
+  (member_modifier)
+  (function_modifier)
+  (property_modifier)
+  (parameter_modifier)
+  (inheritance_modifier)
+  (mutation_modifier)
+  (directive)
+  (shebang_line)
+] @keyword
+
+(simple_identifier) @variable
+
+(type_identifier) @type
+
+((navigation_expression
+  (simple_identifier) @type)
+  (#match? @type "^[A-Z]"))
+
+[
+  (self_expression)
+  (super_expression)
+] @variable.builtin
+
+(class_body
+  (property_declaration
+    (pattern
+      (simple_identifier) @variable.member)))
+
+(protocol_property_declaration
+  (pattern
+    (simple_identifier) @variable.member))
+
+(navigation_expression
+  (navigation_suffix
+    (simple_identifier) @variable.member))
+
+(value_argument
+  name: (value_argument_label
+    (simple_identifier) @variable.member))
+
+(parameter
+  external_name: (simple_identifier) @variable.parameter)
+
+(parameter
+  name: (simple_identifier) @variable.parameter)
+
+(inheritance_constraint
+  (identifier
+    (simple_identifier) @variable.parameter))
+
+(equality_constraint
+  (identifier
+    (simple_identifier) @variable.parameter))
+
+(function_declaration
+  (simple_identifier) @function.method)
+
+(protocol_function_declaration
+  name: (simple_identifier) @function.method)
+
+(init_declaration
+  "init" @constructor)
+
+(call_expression
+  (simple_identifier) @function)
+
+(call_expression
+  (navigation_expression
+    (navigation_suffix
+      (simple_identifier) @function)))
+
+(call_expression
+  (prefix_expression
+    (simple_identifier) @function))
+
+; defer { ... } parses as a call
+((call_expression
+  (simple_identifier) @keyword)
+  (#eq? @keyword "defer"))
+
+(modifiers
+  (attribute
+    "@" @attribute
+    (user_type
+      (type_identifier) @attribute)))
+
+(statement_label) @label
+
+[
+  (diagnostic)
+  (availability_condition)
+  (key_path_string_expression)
+  (selector_expression)
+  (external_macro_definition)
+] @function.macro
+"#;
+
+// Svelte extends the HTML grammar. Script, style and `{...}` expressions are
+// separate languages, injected the same way as Astro.
+pub const SVELTE_HIGHLIGHTS: &str = r#"
+(comment) @comment
+(doctype) @tag
+(tag_name) @tag
+(erroneous_end_tag_name) @tag
+(attribute_name) @attribute
+(quoted_attribute_value) @string
+(attribute_value) @string
+(snippet_name) @function
+
+[
+  (block_start_tag)
+  (block_tag)
+  (block_end_tag)
+  (expression_tag)
+  "as"
+] @keyword
+
+"=" @operator
+["<" ">" "</" "/>" "<!"] @tag
+["{" "}"] @punctuation.bracket
+"#;
+
+// Not the bundled query: it injects every raw_text as JavaScript and then again
+// as TypeScript for lang="ts", and each matching pattern adds its own layer.
+pub const SVELTE_INJECTIONS: &str = r#"
+(script_element
+  (raw_text) @injection.content
+  (#set! injection.language "typescript"))
+
+(style_element
+  (raw_text) @injection.content
+  (#set! injection.language "css"))
+
+((svelte_raw_text) @injection.content
+  (#set! injection.language "typescript"))
+"#;
+
+// Adapted from tree-sitter-objc queries/highlights.scm (MIT). Upstream inherits
+// the C query, so config.rs prepends C_HIGHLIGHTS. Capture names are remapped to
+// HIGHLIGHT_NAMES. The #has-ancestor? property pattern is dropped: it is a Neovim
+// predicate that tree-sitter-highlight ignores, so it would tag every identifier.
+pub const OBJC_HIGHLIGHTS: &str = r##"
+"#import" @function.macro
+"#undef" @function.macro
+(preproc_undef name: (_) @constant)
+
+(module_import "@import" @keyword path: (identifier) @module)
+
+[
+  "@optional"
+  "@required"
+  "__covariant"
+  "__contravariant"
+  (visibility_specification)
+  "@autoreleasepool"
+  "@synthesize"
+  "@dynamic"
+  (protocol_qualifier)
+  "@protocol"
+  "@interface"
+  "@implementation"
+  "@compatibility_alias"
+  "@property"
+  "@selector"
+  "@encode"
+  "@defs"
+  "availability"
+  "@end"
+  "__typeof__"
+  "__typeof"
+  "typeof"
+  "in"
+  "@synchronized"
+  "oneway"
+  "@try"
+  "__try"
+  "@catch"
+  "__catch"
+  "@finally"
+  "__finally"
+  "@throw"
+] @keyword
+
+(class_declaration "@" @keyword "class" @keyword)
+
+(method_definition ["+" "-"] @keyword)
+(method_declaration ["+" "-"] @keyword)
+
+((identifier) @variable.builtin
+  (#any-of? @variable.builtin "self" "super"))
+
+((identifier) @constant.builtin
+  (#any-of? @constant.builtin "YES" "NO" "nil" "Nil"))
+
+[
+  "objc_bridge_related"
+  "@available"
+  "__builtin_available"
+  "va_arg"
+  "asm"
+] @function.builtin
+
+(method_definition (identifier) @function.method)
+(method_declaration (identifier) @function.method)
+(method_identifier (identifier)? @function.method ":" @function.method (identifier)? @function.method)
+(message_expression method: (identifier) @function.method)
+
+((message_expression method: (identifier) @constructor)
+  (#eq? @constructor "init"))
+
+(availability_attribute_specifier
+  [
+    "CF_FORMAT_FUNCTION" "NS_AVAILABLE" "__IOS_AVAILABLE" "NS_AVAILABLE_IOS"
+    "API_AVAILABLE" "API_UNAVAILABLE" "API_DEPRECATED" "NS_ENUM_AVAILABLE_IOS"
+    "NS_DEPRECATED_IOS" "NS_ENUM_DEPRECATED_IOS" "NS_FORMAT_FUNCTION" "DEPRECATED_MSG_ATTRIBUTE"
+    "__deprecated_msg" "__deprecated_enum_msg" "NS_SWIFT_NAME" "NS_SWIFT_UNAVAILABLE"
+    "NS_EXTENSION_UNAVAILABLE_IOS" "NS_CLASS_AVAILABLE_IOS" "NS_CLASS_DEPRECATED_IOS" "__OSX_AVAILABLE_STARTING"
+    "NS_ROOT_CLASS" "NS_UNAVAILABLE" "NS_REQUIRES_NIL_TERMINATION" "CF_RETURNS_RETAINED"
+    "CF_RETURNS_NOT_RETAINED" "DEPRECATED_ATTRIBUTE" "UI_APPEARANCE_SELECTOR" "UNAVAILABLE_ATTRIBUTE"
+  ]) @attribute
+
+(type_qualifier
+  [
+    "_Complex"
+    "_Nonnull"
+    "_Nullable"
+    "_Nullable_result"
+    "_Null_unspecified"
+    "__autoreleasing"
+    "__block"
+    "__bridge"
+    "__bridge_retained"
+    "__bridge_transfer"
+    "__complex"
+    "__kindof"
+    "__nonnull"
+    "__nullable"
+    "__ptrauth_objc_class_ro"
+    "__ptrauth_objc_isa_pointer"
+    "__ptrauth_objc_super_pointer"
+    "__strong"
+    "__thread"
+    "__unsafe_unretained"
+    "__unused"
+    "__weak"
+  ]) @keyword
+
+(class_declaration (identifier) @type)
+(class_interface "@interface" . (identifier) @type superclass: _? @type category: _? @module)
+(class_implementation "@implementation" . (identifier) @type superclass: _? @type category: _? @module)
+(protocol_forward_declaration (identifier) @type)
+(protocol_reference_list (identifier) @type)
+
+[
+  "BOOL"
+  "IMP"
+  "SEL"
+  "Class"
+  "id"
+] @type.builtin
+
+(property_attribute (identifier) @keyword)
+(property_implementation "@synthesize" (identifier) @variable.member)
+
+(method_parameter ":" @function.method (identifier) @variable.parameter)
+(method_parameter declarator: (identifier) @variable.parameter)
+
+(platform) @string.special
+(version_number) @number
+"##;

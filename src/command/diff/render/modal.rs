@@ -38,7 +38,6 @@ pub enum FileStatus {
 }
 
 pub enum ModalContent {
-    #[allow(dead_code)]
     Info { title: String, message: String },
     Confirm { title: String, message: String },
     #[allow(dead_code)]
@@ -93,6 +92,7 @@ pub enum ModalResult {
         file_index: usize,
         sbs_line_index: usize,
         panel: MatchPanel,
+        line_no: usize,
     },
     AnnotationJump { annotation_id: u64 },
     AnnotationEdit { annotation_id: u64 },
@@ -102,7 +102,6 @@ pub enum ModalResult {
 }
 
 impl Modal {
-    #[allow(dead_code)]
     pub fn info(title: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             content: ModalContent::Info {
@@ -1330,6 +1329,7 @@ impl Modal {
                         file_index: e.file_index,
                         sbs_line_index: e.sbs_line_index,
                         panel: e.panel,
+                        line_no: e.line_no,
                     }),
                     KeyCode::PageUp => {
                         state.page_up(page_step);

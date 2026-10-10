@@ -148,6 +148,44 @@ async fn run() -> Result<(), LumenError> {
             };
             command::diff::run_diff_ui(options, backend.as_ref())?;
         }
+        Commands::Show {
+            reference,
+            file,
+            theme,
+            focus,
+            wrap,
+        } => {
+            let reference = reference.unwrap_or_else(|| backend.working_copy_parent_ref().into());
+            let commit = backend.get_commit(&reference)?;
+            let options = command::diff::DiffOptions {
+                reference: None,
+                pr: None,
+                detect_pr: false,
+                file,
+                watch: false,
+                theme: theme.or(config.theme.clone()),
+                stacked: false,
+                focus,
+                origin: None,
+                wrap: wrap || config.wrap.unwrap_or(false),
+            };
+            command::diff::run_show_ui(options, commit, backend.as_ref())?;
+        }
+        Commands::Log {
+            reference,
+            max_count,
+            theme,
+            wrap,
+        } => {
+            let reference = reference.unwrap_or_else(|| backend.working_copy_parent_ref().into());
+            let entries = backend.get_log(&reference, max_count)?;
+            command::log::run(
+                entries,
+                backend.as_ref(),
+                theme.or(config.theme.clone()),
+                wrap || config.wrap.unwrap_or(false),
+            )?;
+        }
         Commands::Configure => {
             command::configure::ConfigureCommand::execute()?;
         }

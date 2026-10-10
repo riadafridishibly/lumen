@@ -15,6 +15,7 @@ pub mod diff;
 pub mod draft;
 pub mod explain;
 pub mod list;
+pub mod log;
 pub mod operate;
 
 pub enum CommandType<'a> {

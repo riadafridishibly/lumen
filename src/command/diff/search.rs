@@ -77,7 +77,12 @@ impl SearchState {
         !self.query.is_empty()
     }
 
-    pub fn update_matches(&mut self, lines: &[DiffLine], fullscreen: DiffFullscreen) {
+    pub fn update_matches(
+        &mut self,
+        lines: &[DiffLine],
+        fullscreen: DiffFullscreen,
+        unified: bool,
+    ) {
         if self.query.is_empty() {
             self.matches.clear();
             self.current_match = None;
@@ -96,8 +101,10 @@ impl SearchState {
         let query_len = self.query.len();
 
         for (i, line) in lines.iter().enumerate() {
-            // Find all occurrences in old panel
-            if !matches!(fullscreen, DiffFullscreen::NewOnly) {
+            // Find all occurrences in old panel. The unified view shows unchanged
+            // rows once, from the new side.
+            let shown_once = unified && line.new_line.is_some();
+            if !matches!(fullscreen, DiffFullscreen::NewOnly) && !shown_once {
                 if let Some((_, text)) = &line.old_line {
                     let text_lower = text.to_lowercase();
                     let mut start = 0;

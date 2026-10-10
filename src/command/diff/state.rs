@@ -4,7 +4,9 @@ use std::time::SystemTime;
 use tree_sitter::{Parser, Tree};
 
 use crate::command::diff::context::get_language_context;
-use crate::command::diff::diff_algo::{compute_side_by_side, count_added_removed, find_hunk_starts};
+use crate::command::diff::diff_algo::{
+    compute_side_by_side, count_added_removed, find_hunk_starts, to_unified,
+};
 use crate::command::diff::highlight::FileHighlighter;
 
 use crate::command::diff::search::SearchState;
@@ -12,7 +14,7 @@ use crate::command::diff::types::{
     build_file_tree, CursorPosition, DiffFullscreen, DiffLine, DiffPanelFocus,
     DiffViewSettings, FileDiff, FocusedPanel, Selection, SelectionMode, SidebarItem,
 };
-use crate::vcs::StackedCommitInfo;
+use crate::vcs::{CommitInfo, StackedCommitInfo};
 
 #[derive(Default, Clone, Copy, PartialEq)]
 pub enum PendingKey {
@@ -183,6 +185,8 @@ pub struct AppState {
     pub current_commit_index: usize,
     /// Tracks viewed files per commit SHA (commit SHA -> set of viewed filenames)
     stacked_viewed_files: HashMap<String, HashSet<String>>,
+    /// The commit opened by `lumen show`, rendered in the header
+    pub show_commit: Option<CommitInfo>,
     /// VCS backend name ("git" or "jj")
     pub vcs_name: &'static str,
     /// The commit reference used to open the diff (e.g., "HEAD~2..HEAD", "main..feature")
@@ -315,6 +319,7 @@ impl AppState {
             stacked_commits: Vec::new(),
             current_commit_index: 0,
             stacked_viewed_files: HashMap::new(),
+            show_commit: None,
             vcs_name: "git", // Default, will be set by caller
             diff_reference: None,
             diff_panel_focus: DiffPanelFocus::default(),
@@ -345,6 +350,53 @@ impl AppState {
         (0, 0)
     }
 
+    /// Diff rows for a file, in unified order when the unified view is on.
+    fn compute_rows(&self, file_index: usize) -> Vec<DiffLine> {
+        let diff = &self.file_diffs[file_index];
+        let rows = compute_side_by_side(
+            &diff.old_content,
+            &diff.new_content,
+            self.settings.tab_width,
+        );
+        if self.settings.unified {
+            to_unified(rows)
+        } else {
+            rows
+        }
+    }
+
+    /// Switch between side-by-side and unified rows, keeping the line at the
+    /// top of the view in place.
+    pub fn toggle_unified(&mut self) {
+        self.ensure_cache();
+        let top = self
+            .side_by_side_ref()
+            .get(self.scroll as usize)
+            .and_then(|dl| {
+                let panel = if dl.new_line.is_some() {
+                    DiffPanelFocus::New
+                } else {
+                    DiffPanelFocus::Old
+                };
+                dl.line_number(panel).map(|n| (panel, n))
+            });
+        self.settings.unified = !self.settings.unified;
+        self.diff_fullscreen = DiffFullscreen::None;
+        self.clear_selection();
+        self.cached_side_by_side = None;
+        self.search_dirty = true;
+        self.ensure_cache();
+        if let Some((panel, n)) = top {
+            if let Some(idx) = self
+                .side_by_side_ref()
+                .iter()
+                .position(|dl| dl.line_number(panel) == Some(n))
+            {
+                self.scroll = idx as u16;
+            }
+        }
+    }
+
     /// Get cached side_by_side diff for current file, computing if necessary
     pub fn get_side_by_side(&mut self) -> &[DiffLine] {
         if self.file_diffs.is_empty() {
@@ -358,12 +410,7 @@ impl AppState {
         };
 
         if needs_recompute {
-            let diff = &self.file_diffs[current];
-            let side_by_side = compute_side_by_side(
-                &diff.old_content,
-                &diff.new_content,
-                self.settings.tab_width,
-            );
+            let side_by_side = self.compute_rows(current);
             let hunks = find_hunk_starts(&side_by_side);
             let total = side_by_side.len();
             self.cached_side_by_side = Some((current, side_by_side));
@@ -412,12 +459,7 @@ impl AppState {
             None => true,
         };
         if needs_recompute {
-            let diff = &self.file_diffs[current];
-            let sbs = compute_side_by_side(
-                &diff.old_content,
-                &diff.new_content,
-                self.settings.tab_width,
-            );
+            let sbs = self.compute_rows(current);
             let hnks = find_hunk_starts(&sbs);
             let total = sbs.len();
             self.cached_side_by_side = Some((current, sbs));
@@ -472,7 +514,8 @@ impl AppState {
                 Some((_, data)) => data.as_slice(),
                 None => &[],
             };
-            self.search_state.update_matches(sbs, self.diff_fullscreen);
+            self.search_state
+                .update_matches(sbs, self.diff_fullscreen, self.settings.unified);
             self.search_dirty = false;
         }
     }
@@ -760,6 +803,15 @@ impl AppState {
         self.stacked_mode = true;
         self.stacked_commits = commits;
         self.current_commit_index = 0;
+    }
+
+    /// Rows above the content area: one for the stacked or show header, else none.
+    pub fn header_height(&self) -> u16 {
+        if self.stacked_mode || self.show_commit.is_some() {
+            1
+        } else {
+            0
+        }
     }
 
     /// Get the current commit info if in stacked mode

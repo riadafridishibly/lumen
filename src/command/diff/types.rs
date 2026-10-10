@@ -58,6 +58,8 @@ pub struct DiffViewSettings {
     pub context: ContextConfig,
     pub tab_width: usize,
     pub wrap: bool,
+    /// One panel with deletions above insertions instead of two panels
+    pub unified: bool,
 }
 
 impl Default for DiffViewSettings {
@@ -66,6 +68,7 @@ impl Default for DiffViewSettings {
             context: ContextConfig::default(),
             tab_width: 4,
             wrap: false,
+            unified: false,
         }
     }
 }

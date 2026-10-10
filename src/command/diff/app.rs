@@ -45,6 +45,7 @@ use super::render::{
     render_diff, render_empty_state, truncate_path, FilePickerItem, KeyBind, KeyBindSection, Modal,
     ModalContent, ModalFileStatus, ModalResult,
 };
+use super::search::MatchPanel;
 use super::state::{adjust_scroll_for_hunk, adjust_scroll_to_line, AppState, PendingKey};
 use super::theme;
 use super::types::{
@@ -58,7 +59,7 @@ use super::{
 use spinoff::{spinners, Color, Spinner};
 
 use crate::commit_reference::CommitReference;
-use crate::vcs::{StackedCommitInfo, VcsBackend};
+use crate::vcs::{CommitInfo, StackedCommitInfo, VcsBackend};
 
 /// Navigate to a different commit in stacked mode.
 /// Returns true if navigation was successful.
@@ -107,22 +108,7 @@ fn max_h_scroll(state: &mut AppState, term_width: u16) -> u16 {
         return 0;
     }
 
-    let sidebar_width = state.sidebar_width(term_width);
-    // The renderer collapses to a single panel for added or deleted files,
-    // regardless of the diff_fullscreen toggle, so mirror that here.
-    let effective_fullscreen = if diff.old_content.is_empty() && !diff.new_content.is_empty() {
-        DiffFullscreen::NewOnly
-    } else if !diff.old_content.is_empty() && diff.new_content.is_empty() {
-        DiffFullscreen::OldOnly
-    } else {
-        state.diff_fullscreen
-    };
-    let layout = PanelLayout::calculate(
-        term_width,
-        sidebar_width,
-        state.show_sidebar,
-        effective_fullscreen,
-    );
+    let layout = panel_layout(state, term_width);
 
     state.ensure_cache();
     let sbs = state.side_by_side_ref();
@@ -140,13 +126,8 @@ fn max_h_scroll(state: &mut AppState, term_width: u16) -> u16 {
     // Per-row overhead before the text: focus indicator (1 col) + line-number
     // gutter (5 cols). The new panel drops its indicator when it's rendered
     // alongside the old panel.
-    let gutter = layout.gutter_width as usize;
-    let old_overhead = layout.focus_indicator_width as usize + gutter;
-    let new_overhead = if layout.old_panel_width > 0 {
-        gutter
-    } else {
-        layout.focus_indicator_width as usize + gutter
-    };
+    let old_overhead = layout.content_x_offset(DiffPanelFocus::Old) as usize;
+    let new_overhead = layout.content_x_offset(DiffPanelFocus::New) as usize;
 
     let old_overflow = if layout.old_panel_width > 0 {
         (max_old + old_overhead).saturating_sub(layout.old_panel_width as usize)
@@ -160,6 +141,29 @@ fn max_h_scroll(state: &mut AppState, term_width: u16) -> u16 {
     };
 
     old_overflow.max(new_overflow).min(u16::MAX as usize) as u16
+}
+
+/// Panel layout matching what the renderer draws for the current file.
+fn panel_layout(state: &AppState, term_width: u16) -> PanelLayout {
+    // Added files, deleted files and the unified view use one full-width panel.
+    let fullscreen = match state.file_diffs.get(state.current_file) {
+        Some(d) if d.old_content.is_empty() && !d.new_content.is_empty() => DiffFullscreen::NewOnly,
+        Some(d) if !d.old_content.is_empty() && d.new_content.is_empty() => DiffFullscreen::OldOnly,
+        _ if state.settings.unified => DiffFullscreen::NewOnly,
+        _ => state.diff_fullscreen,
+    };
+    let mut layout = PanelLayout::calculate(
+        term_width,
+        state.sidebar_width(term_width),
+        state.show_sidebar,
+        fullscreen,
+    );
+    if state.settings.unified && fullscreen == DiffFullscreen::NewOnly {
+        // Deleted rows select on the old side but share the single panel.
+        layout.old_panel_x = layout.new_panel_x;
+        layout.old_panel_width = layout.new_panel_width;
+    }
+    layout
 }
 
 /// Clamp `state.h_scroll` against the rightmost meaningful offset for the
@@ -243,7 +247,9 @@ pub fn run_app_with_pr(
     backend: &dyn VcsBackend,
 ) -> io::Result<()> {
     match load_pr_file_diffs(&pr_info) {
-        Ok(file_diffs) => run_app_internal(options, Some(pr_info), file_diffs, None, backend),
+        Ok(file_diffs) => {
+            run_app_internal(options, Some(pr_info), file_diffs, None, None, backend)
+        },
         Err(_) => std::process::exit(1),
     }
 }
@@ -254,7 +260,7 @@ pub fn run_app(
     backend: &dyn VcsBackend,
 ) -> io::Result<()> {
     let file_diffs = load_file_diffs(&options, backend);
-    run_app_internal(options, pr_info, file_diffs, None, backend)
+    run_app_internal(options, pr_info, file_diffs, None, None, backend)
 }
 
 pub fn run_app_stacked(
@@ -265,7 +271,16 @@ pub fn run_app_stacked(
     // Load the first commit's diff
     let first_commit = &commits[0];
     let file_diffs = load_single_commit_diffs(&first_commit.commit_id, &options.file, backend);
-    run_app_internal(options, None, file_diffs, Some(commits), backend)
+    run_app_internal(options, None, file_diffs, Some(commits), None, backend)
+}
+
+pub fn run_app_show(
+    options: DiffOptions,
+    commit: CommitInfo,
+    backend: &dyn VcsBackend,
+) -> io::Result<()> {
+    let file_diffs = load_file_diffs(&options, backend);
+    run_app_internal(options, None, file_diffs, None, Some(commit), backend)
 }
 
 /// Sync viewed files from GitHub to local state
@@ -285,6 +300,7 @@ fn run_app_internal(
     pr_info: Option<PrInfo>,
     file_diffs: Vec<super::types::FileDiff>,
     stacked_commits: Option<Vec<StackedCommitInfo>>,
+    show_commit: Option<CommitInfo>,
     backend: &dyn VcsBackend,
 ) -> io::Result<()> {
     theme::init(options.theme.as_deref());
@@ -314,6 +330,15 @@ fn run_app_internal(
     // Initialize stacked mode if commits were provided
     if let Some(commits) = stacked_commits {
         state.init_stacked_mode(commits);
+    }
+
+    if let Some(commit) = show_commit {
+        state.set_diff_reference(Some(commit.short_id().to_string()));
+        // The header only needs the metadata; the viewer loads file contents itself.
+        state.show_commit = Some(CommitInfo {
+            diff: String::new(),
+            ..commit
+        });
     }
 
     // Load viewed files from GitHub on startup in PR mode (before TUI starts)
@@ -462,6 +487,7 @@ fn run_app_internal(
                     state.current_commit(),
                     state.current_commit_index,
                     state.stacked_commits.len(),
+                    state.show_commit.as_ref(),
                     &side_by_side,
                     state.vcs_name,
                     &state.annotations,
@@ -486,14 +512,8 @@ fn run_app_internal(
                 {
                     let t = theme::get();
                     let term = frame.area();
-                    let header_h: u16 = if state.stacked_mode { 1 } else { 0 };
-                    let sidebar_w: u16 = state.sidebar_width(term.width);
-                    let layout = PanelLayout::calculate(
-                        term.width,
-                        sidebar_w,
-                        state.show_sidebar,
-                        state.diff_fullscreen,
-                    );
+                    let header_h: u16 = state.header_height();
+                    let layout = panel_layout(&state, term.width);
 
                     let sel = &state.selection;
                     let (_, sel_end) = sel.normalized_range();
@@ -798,7 +818,8 @@ fn run_app_internal(
                                 ModalResult::JumpToLine {
                                     file_index,
                                     sbs_line_index,
-                                    panel: _panel,
+                                    panel,
+                                    line_no,
                                 } => {
                                     // Reveal + switch to the target file, then pin the
                                     // matched sbs line to the top of the content area.
@@ -821,10 +842,18 @@ fn run_app_internal(
                                     // before pinning scroll, so we don't overscroll
                                     // past the last visible row.
                                     state.ensure_cache();
-                                    let sbs_len = state.side_by_side_ref().len();
+                                    let sbs = state.side_by_side_ref();
+                                    // The index comes from side-by-side rows; the unified
+                                    // view orders rows differently, so look the line up.
+                                    let panel = match panel {
+                                        MatchPanel::Old => DiffPanelFocus::Old,
+                                        MatchPanel::New => DiffPanelFocus::New,
+                                    };
+                                    let target = find_sbs_index_for_line(sbs, panel, line_no)
+                                        .unwrap_or(sbs_line_index);
                                     let vh = terminal.size()?.height.saturating_sub(5) as usize;
-                                    let max_scroll = sbs_len.saturating_sub(vh) as u16;
-                                    state.scroll = (sbs_line_index as u16).min(max_scroll);
+                                    let max_scroll = sbs.len().saturating_sub(vh) as u16;
+                                    state.scroll = (target as u16).min(max_scroll);
                                     active_modal = None;
                                 }
                                 ModalResult::Dismissed | ModalResult::Selected(_, _) => {
@@ -843,23 +872,10 @@ fn run_app_internal(
                 Event::Mouse(mouse) if active_modal.is_none() => {
                     let term_size = terminal.size()?;
                     let footer_height = 1u16;
-                    let header_height = if state.stacked_mode { 1u16 } else { 0u16 };
+                    let header_height = state.header_height();
                     let sidebar_width = state.sidebar_width(term_size.width);
 
-                    // For new/deleted files the renderer uses a single full-width panel,
-                    // so override diff_fullscreen so PanelLayout matches.
-                    let effective_fullscreen = if !state.file_diffs.is_empty() {
-                        let d = &state.file_diffs[state.current_file];
-                        if d.old_content.is_empty() && !d.new_content.is_empty() {
-                            DiffFullscreen::NewOnly
-                        } else if !d.old_content.is_empty() && d.new_content.is_empty() {
-                            DiffFullscreen::OldOnly
-                        } else {
-                            state.diff_fullscreen
-                        }
-                    } else {
-                        state.diff_fullscreen
-                    };
+                    let layout = panel_layout(&state, term_size.width);
 
                     match mouse.kind {
                         MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
@@ -988,14 +1004,6 @@ fn run_app_internal(
                                 // Any new click in the diff area clears the previous selection
                                 state.clear_selection();
 
-                                // Calculate layout for selection
-                                let layout = PanelLayout::calculate(
-                                    term_size.width,
-                                    sidebar_width,
-                                    state.show_sidebar,
-                                    effective_fullscreen,
-                                );
-
                                 if let Some(panel) = layout.panel_at_x(mouse.column) {
                                     let is_gutter = layout.is_in_gutter(mouse.column, panel);
                                     let content_start_y = header_height + 1;
@@ -1016,10 +1024,17 @@ fn run_app_internal(
                                                 None => continue, // Clicked inside an annotation overlay
                                             };
                                         let line = state.scroll as usize + adjusted_y;
-                                        let sbs_len = state.side_by_side_ref().len();
-                                        if line >= sbs_len {
+                                        let sbs = state.side_by_side_ref();
+                                        let Some(row) = sbs.get(line) else {
                                             continue;
-                                        }
+                                        };
+                                        // Unified view: deleted rows belong to the old side.
+                                        let panel =
+                                            if state.settings.unified && row.new_line.is_none() {
+                                                DiffPanelFocus::Old
+                                            } else {
+                                                panel
+                                            };
 
                                         let panel_x = match panel {
                                             DiffPanelFocus::Old => layout.old_panel_x,
@@ -1055,13 +1070,6 @@ fn run_app_internal(
                                     let content_start_y = header_height + 1;
 
                                     if mouse.row >= content_start_y {
-                                        let layout = PanelLayout::calculate(
-                                            term_size.width,
-                                            sidebar_width,
-                                            state.show_sidebar,
-                                            effective_fullscreen,
-                                        );
-
                                         let rel_y = (mouse.row - content_start_y) as usize;
                                         // Account for context lines and file annotations
                                         let content_y =
@@ -1359,7 +1367,12 @@ fn run_app_internal(
                                 active_modal = Some(Modal::file_picker("Find File", items));
                             }
                         }
-                        KeyCode::Char(']') => {
+                        KeyCode::Char('v') => {
+                            if !state.file_diffs.is_empty() {
+                                state.toggle_unified();
+                            }
+                        }
+                        KeyCode::Char(']') if !state.settings.unified => {
                             if !state.file_diffs.is_empty() {
                                 let diff = &state.file_diffs[state.current_file];
                                 if !diff.new_content.is_empty() {
@@ -1371,7 +1384,7 @@ fn run_app_internal(
                                 }
                             }
                         }
-                        KeyCode::Char('[') => {
+                        KeyCode::Char('[') if !state.settings.unified => {
                             if !state.file_diffs.is_empty() {
                                 let diff = &state.file_diffs[state.current_file];
                                 if !diff.old_content.is_empty() {
@@ -2006,6 +2019,17 @@ fn run_app_internal(
                                 );
                             }
                         }
+                        KeyCode::Char('M') => {
+                            if let Some(commit) = &state.show_commit {
+                                active_modal = Some(Modal::info(
+                                    format!("Commit {}", commit.short_id()),
+                                    format!(
+                                        "Author: {}\nDate:   {}\n\n{}",
+                                        commit.author, commit.date, commit.message
+                                    ),
+                                ));
+                            }
+                        }
                         KeyCode::Char('?') => {
                             active_modal = Some(Modal::keybindings(
                                 "Keybindings",
@@ -2060,6 +2084,10 @@ fn run_app_internal(
                                             KeyBind {
                                                 key: "ctrl+l / ctrl+h",
                                                 description: "Next / prev commit (stacked)",
+                                            },
+                                            KeyBind {
+                                                key: "M",
+                                                description: "Full commit message (show)",
                                             },
                                             KeyBind {
                                                 key: "?",
@@ -2135,6 +2163,10 @@ fn run_app_internal(
                                             KeyBind {
                                                 key: "=",
                                                 description: "Reset fullscreen to side-by-side",
+                                            },
+                                            KeyBind {
+                                                key: "v",
+                                                description: "Toggle unified / side-by-side view",
                                             },
                                         ],
                                     },
